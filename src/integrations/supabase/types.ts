@@ -75,7 +75,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      criar_jogo: { Args: never; Returns: string }
+      iniciar_jogo: { Args: { p_jogo_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
