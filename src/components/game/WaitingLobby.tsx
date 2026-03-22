@@ -1,0 +1,117 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Users, Loader2 } from "lucide-react";
+
+interface Player {
+  id: string;
+  nickname: string;
+  cor_empilhadeira: string;
+}
+
+interface WaitingLobbyProps {
+  gameId: string;
+  nickname: string;
+}
+
+export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
+  const [players, setPlayers] = useState<Player[]>([]);
+
+  useEffect(() => {
+    // Fetch initial players
+    const fetchPlayers = async () => {
+      const { data } = await supabase
+        .from("jogadores")
+        .select("id, nickname, cor_empilhadeira")
+        .eq("jogo_id", gameId)
+        .order("created_at", { ascending: true });
+
+      if (data) setPlayers(data);
+    };
+
+    fetchPlayers();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel(`jogadores-${gameId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "jogadores",
+          filter: `jogo_id=eq.${gameId}`,
+        },
+        (payload) => {
+          const newPlayer = payload.new as Player;
+          setPlayers((prev) => {
+            if (prev.some((p) => p.id === newPlayer.id)) return prev;
+            return [...prev, newPlayer];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameId]);
+
+  return (
+    <div className="min-h-screen flex flex-col items-center px-4 py-8">
+      <div className="w-full max-w-md space-y-8">
+        {/* Header */}
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20">
+            <Loader2 className="w-8 h-8 text-accent animate-spin" />
+          </div>
+          <h1 className="text-2xl font-display font-bold text-foreground">
+            Aguardando o jogo iniciar...
+          </h1>
+          <p className="text-muted-foreground font-body">
+            Você entrou como{" "}
+            <span className="text-primary font-bold">{nickname}</span>
+          </p>
+        </div>
+
+        {/* Players list */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-muted-foreground font-body">
+            <Users className="w-5 h-5" />
+            <span>
+              {players.length} jogador{players.length !== 1 ? "es" : ""} conectado
+              {players.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          <div className="grid gap-3">
+            {players.map((player, i) => (
+              <div
+                key={player.id}
+                className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border animate-bounce-in"
+                style={{ animationDelay: `${i * 0.05}s` }}
+              >
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-display font-bold shrink-0"
+                  style={{
+                    backgroundColor: player.cor_empilhadeira,
+                    color: "#1a1a2e",
+                  }}
+                >
+                  {player.nickname[0].toUpperCase()}
+                </div>
+                <span className="font-display font-medium text-foreground truncate">
+                  {player.nickname}
+                </span>
+                {player.nickname === nickname && (
+                  <span className="ml-auto text-xs font-body text-primary bg-primary/10 px-2 py-1 rounded-full">
+                    Você
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
