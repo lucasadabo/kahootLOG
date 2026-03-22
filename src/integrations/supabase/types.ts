@@ -14,7 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      jogadores: {
+        Row: {
+          cor_empilhadeira: string
+          created_at: string
+          id: string
+          jogo_id: string
+          nickname: string
+        }
+        Insert: {
+          cor_empilhadeira: string
+          created_at?: string
+          id?: string
+          jogo_id: string
+          nickname: string
+        }
+        Update: {
+          cor_empilhadeira?: string
+          created_at?: string
+          id?: string
+          jogo_id?: string
+          nickname?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jogadores_jogo_id_fkey"
+            columns: ["jogo_id"]
+            isOneToOne: false
+            referencedRelation: "jogos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jogos: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          pin: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          pin: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          pin?: string
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
