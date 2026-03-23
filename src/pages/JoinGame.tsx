@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { JoinForm } from "@/components/game/JoinForm";
 import { WaitingLobby } from "@/components/game/WaitingLobby";
+import { GamePlay } from "@/components/game/GamePlay";
 
 function generateRandomColor(): string {
   const colors = [
@@ -15,7 +16,9 @@ function generateRandomColor(): string {
 
 export default function JoinGame() {
   const [gameId, setGameId] = useState<string | null>(null);
+  const [playerId, setPlayerId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
+  const [gameStatus, setGameStatus] = useState<string>("aguardando");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -24,14 +27,13 @@ export default function JoinGame() {
     setLoading(true);
 
     try {
-      // Find game by PIN
       const { data: jogo, error: jogoError } = await supabase
         .from("jogos")
         .select("id")
         .eq("pin", pin)
         .maybeSingle();
 
-      console.log("[JoinGame] PIN lookup result:", { pin, jogo, jogoError });
+      console.log("[JoinGame] PIN lookup:", { pin, jogo, jogoError });
 
       if (jogoError) throw jogoError;
       if (!jogo) {
@@ -40,7 +42,6 @@ export default function JoinGame() {
         return;
       }
 
-      // Insert player
       const { data: insertData, error: insertError } = await supabase
         .from("jogadores")
         .insert({
@@ -48,12 +49,12 @@ export default function JoinGame() {
           nickname: nick.trim(),
           cor_empilhadeira: generateRandomColor(),
         })
-        .select();
+        .select("id")
+        .single();
 
-      console.log("[JoinGame] INSERT result:", { insertData, insertError });
+      console.log("[JoinGame] INSERT:", { insertData, insertError });
 
       if (insertError) {
-        console.error("[JoinGame] INSERT error:", insertError);
         if (insertError.code === "23505") {
           setError("Esse nickname já está em uso! Escolha outro.");
         } else {
@@ -63,19 +64,29 @@ export default function JoinGame() {
         return;
       }
 
-      console.log("[JoinGame] Transitioning to lobby for game:", jogo.id);
       setGameId(jogo.id);
+      setPlayerId(insertData.id);
       setNickname(nick.trim());
     } catch (err) {
-      console.error("[JoinGame] Unexpected error:", err);
+      console.error("[JoinGame] Error:", err);
       setError("Erro inesperado. Tente novamente.");
     } finally {
       setLoading(false);
     }
   };
 
-  if (gameId) {
-    return <WaitingLobby gameId={gameId} nickname={nickname} />;
+  if (gameId && playerId && gameStatus === "em_andamento") {
+    return <GamePlay gameId={gameId} playerId={playerId} nickname={nickname} />;
+  }
+
+  if (gameId && playerId) {
+    return (
+      <WaitingLobby
+        gameId={gameId}
+        nickname={nickname}
+        onGameStart={() => setGameStatus("em_andamento")}
+      />
+    );
   }
 
   return <JoinForm onJoin={handleJoin} error={error} loading={loading} />;
