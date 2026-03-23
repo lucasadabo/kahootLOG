@@ -21,6 +21,8 @@ export type Database = {
           id: string
           jogo_id: string
           nickname: string
+          posicao: number
+          pular_vez: boolean
         }
         Insert: {
           cor_empilhadeira: string
@@ -28,6 +30,8 @@ export type Database = {
           id?: string
           jogo_id: string
           nickname: string
+          posicao?: number
+          pular_vez?: boolean
         }
         Update: {
           cor_empilhadeira?: string
@@ -35,6 +39,8 @@ export type Database = {
           id?: string
           jogo_id?: string
           nickname?: string
+          posicao?: number
+          pular_vez?: boolean
         }
         Relationships: [
           {
@@ -50,6 +56,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          jogador_atual_id: string | null
           nome: string
           pin: string
           status: string
@@ -57,6 +64,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          jogador_atual_id?: string | null
           nome: string
           pin: string
           status?: string
@@ -64,9 +72,51 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          jogador_atual_id?: string | null
           nome?: string
           pin?: string
           status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jogos_jogador_atual_id_fkey"
+            columns: ["jogador_atual_id"]
+            isOneToOne: false
+            referencedRelation: "jogadores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perguntas: {
+        Row: {
+          alternativa_a: string
+          alternativa_b: string
+          alternativa_c: string
+          alternativa_d: string
+          created_at: string
+          id: string
+          resposta_correta: string
+          texto: string
+        }
+        Insert: {
+          alternativa_a: string
+          alternativa_b: string
+          alternativa_c: string
+          alternativa_d: string
+          created_at?: string
+          id?: string
+          resposta_correta: string
+          texto: string
+        }
+        Update: {
+          alternativa_a?: string
+          alternativa_b?: string
+          alternativa_c?: string
+          alternativa_d?: string
+          created_at?: string
+          id?: string
+          resposta_correta?: string
+          texto?: string
         }
         Relationships: []
       }
@@ -77,6 +127,18 @@ export type Database = {
     Functions: {
       criar_jogo: { Args: never; Returns: string }
       iniciar_jogo: { Args: { p_jogo_id: string }; Returns: undefined }
+      jogar: {
+        Args: {
+          p_acertou: boolean
+          p_dado: number
+          p_jogador_id: string
+          p_jogo_id: string
+          p_pergunta_id: string
+        }
+        Returns: Json
+      }
+      pegar_pergunta: { Args: never; Returns: Json }
+      proximo_turno: { Args: { p_jogo_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
