@@ -17,20 +17,19 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
-    // Fetch initial players
     const fetchPlayers = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("jogadores")
         .select("id, nickname, cor_empilhadeira")
         .eq("jogo_id", gameId)
         .order("created_at", { ascending: true });
 
+      console.log("[WaitingLobby] SELECT jogadores:", { data, error });
       if (data) setPlayers(data);
     };
 
     fetchPlayers();
 
-    // Subscribe to realtime changes
     const channel = supabase
       .channel(`jogadores-${gameId}`)
       .on(
@@ -42,6 +41,7 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
           filter: `jogo_id=eq.${gameId}`,
         },
         (payload) => {
+          console.log("[WaitingLobby] Realtime INSERT:", payload.new);
           const newPlayer = payload.new as Player;
           setPlayers((prev) => {
             if (prev.some((p) => p.id === newPlayer.id)) return prev;
@@ -49,7 +49,9 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("[WaitingLobby] Subscription status:", status);
+      });
 
     return () => {
       supabase.removeChannel(channel);

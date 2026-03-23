@@ -31,6 +31,8 @@ export default function JoinGame() {
         .eq("pin", pin)
         .maybeSingle();
 
+      console.log("[JoinGame] PIN lookup result:", { pin, jogo, jogoError });
+
       if (jogoError) throw jogoError;
       if (!jogo) {
         setError("PIN inválido! Verifique e tente novamente.");
@@ -39,15 +41,19 @@ export default function JoinGame() {
       }
 
       // Insert player
-      const { error: insertError } = await supabase
+      const { data: insertData, error: insertError } = await supabase
         .from("jogadores")
         .insert({
           jogo_id: jogo.id,
           nickname: nick.trim(),
           cor_empilhadeira: generateRandomColor(),
-        });
+        })
+        .select();
+
+      console.log("[JoinGame] INSERT result:", { insertData, insertError });
 
       if (insertError) {
+        console.error("[JoinGame] INSERT error:", insertError);
         if (insertError.code === "23505") {
           setError("Esse nickname já está em uso! Escolha outro.");
         } else {
@@ -57,9 +63,11 @@ export default function JoinGame() {
         return;
       }
 
+      console.log("[JoinGame] Transitioning to lobby for game:", jogo.id);
       setGameId(jogo.id);
       setNickname(nick.trim());
-    } catch {
+    } catch (err) {
+      console.error("[JoinGame] Unexpected error:", err);
       setError("Erro inesperado. Tente novamente.");
     } finally {
       setLoading(false);
