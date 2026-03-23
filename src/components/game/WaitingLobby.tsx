@@ -11,9 +11,10 @@ interface Player {
 interface WaitingLobbyProps {
   gameId: string;
   nickname: string;
+  onGameStart: () => void;
 }
 
-export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
+export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProps) {
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
@@ -24,22 +25,18 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
         .eq("jogo_id", gameId)
         .order("created_at", { ascending: true });
 
-      console.log("[WaitingLobby] SELECT jogadores:", { data, error });
+      console.log("[WaitingLobby] SELECT:", { data, error });
       if (data) setPlayers(data);
     };
 
     fetchPlayers();
 
-    const channel = supabase
-      .channel(`jogadores-${gameId}`)
+    // Listen for new players
+    const playersChannel = supabase
+      .channel(`lobby-jogadores-${gameId}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "jogadores",
-          filter: `jogo_id=eq.${gameId}`,
-        },
+        { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
         (payload) => {
           console.log("[WaitingLobby] Realtime INSERT:", payload.new);
           const newPlayer = payload.new as Player;
@@ -49,19 +46,33 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
           });
         }
       )
-      .subscribe((status) => {
-        console.log("[WaitingLobby] Subscription status:", status);
-      });
+      .subscribe();
+
+    // Listen for game status change
+    const gameChannel = supabase
+      .channel(`lobby-jogo-${gameId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` },
+        (payload) => {
+          console.log("[WaitingLobby] Game UPDATE:", payload.new);
+          const updated = payload.new as { status: string };
+          if (updated.status === "em_andamento") {
+            onGameStart();
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(playersChannel);
+      supabase.removeChannel(gameChannel);
     };
-  }, [gameId]);
+  }, [gameId, onGameStart]);
 
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-md space-y-8">
-        {/* Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20">
             <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -75,7 +86,6 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
           </p>
         </div>
 
-        {/* Players list */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-muted-foreground font-body">
             <Users className="w-5 h-5" />
@@ -94,10 +104,7 @@ export function WaitingLobby({ gameId, nickname }: WaitingLobbyProps) {
               >
                 <div
                   className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-display font-bold shrink-0"
-                  style={{
-                    backgroundColor: player.cor_empilhadeira,
-                    color: "#1a1a2e",
-                  }}
+                  style={{ backgroundColor: player.cor_empilhadeira, color: "#1a1a2e" }}
                 >
                   {player.nickname[0].toUpperCase()}
                 </div>
