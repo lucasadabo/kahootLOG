@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Monitor, Users, Play, Plus, Copy, Check, Trophy, Zap } from "lucide-react";
+import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
+import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 
 interface Player {
   id: string;
@@ -24,15 +26,30 @@ export default function Admin() {
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const fetchGame = useCallback(async (gameId: string) => {
+    const { data, error } = await supabase
+      .from("jogos")
+      .select("id, pin, nome, status, jogador_atual_id")
+      .eq("id", gameId)
+      .single();
+
+    console.log("[Admin] jogo SELECT:", { data, error });
+
+    if (!error && data) {
+      setGame({ ...data, jogador_atual_id: data.jogador_atual_id ?? null } as Game);
+    }
+  }, []);
+
   const fetchPlayers = useCallback(async (gameId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("jogadores")
       .select("id, nickname, cor_empilhadeira, posicao")
       .eq("jogo_id", gameId)
       .order("created_at", { ascending: true });
 
-    if (data) {
-      console.log("jogadores carregados:", data);
+    console.log("jogadores carregados:", { data, error });
+
+    if (!error && data) {
       setPlayers(data);
     }
   }, []);
@@ -40,45 +57,34 @@ export default function Admin() {
   useEffect(() => {
     if (!game) return;
 
+    fetchGame(game.id);
     fetchPlayers(game.id);
 
     const channel = supabase
       .channel(`admin-${game.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
+        { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
         (payload) => {
-          const newPlayer = payload.new as Player;
-          console.log("novo jogador:", newPlayer);
-          setPlayers((prev) => {
-            if (prev.some((p) => p.id === newPlayer.id)) return prev;
-            return [...prev, { ...newPlayer, posicao: newPlayer.posicao ?? 0 }];
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
-        (payload) => {
-          const updated = payload.new as Player;
-          setPlayers((prev) => prev.map((p) => (p.id === updated.id ? { ...p, posicao: updated.posicao } : p)));
+          console.log("[Admin] jogadores realtime:", payload);
+          fetchPlayers(game.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${game.id}` },
         (payload) => {
-          const updated = payload.new as Game;
-          console.log("jogo atualizado:", updated);
-          setGame((prev) => prev ? { ...prev, status: updated.status, jogador_atual_id: updated.jogador_atual_id } : prev);
+          console.log("[Admin] jogo realtime:", payload);
+          fetchGame(game.id);
+          fetchPlayers(game.id);
         }
       )
-      .subscribe();
+      .subscribe((status) => console.log("[Admin] subscription:", status));
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [game?.id, fetchPlayers]);
+  }, [game?.id, fetchGame, fetchPlayers]);
 
   const handleCreateGame = async () => {
     setCreating(true);
@@ -98,6 +104,7 @@ export default function Admin() {
       if (fetchError) throw fetchError;
       console.log("jogo carregado:", jogoData);
       setGame({ ...jogoData, jogador_atual_id: jogoData.jogador_atual_id ?? null } as Game);
+      setPlayers([]);
     } catch (err) {
       console.error("Erro ao criar jogo:", err);
     } finally {
@@ -112,6 +119,7 @@ export default function Admin() {
       const { error } = await supabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;
       console.log("início do jogo:", game.id);
+      await fetchGame(game.id);
     } catch (err) {
       console.error("Erro ao iniciar jogo:", err);
     } finally {
@@ -199,77 +207,21 @@ export default function Admin() {
         )}
 
         {isStarted && currentPlayer && game.status !== "finalizado" && (
-          <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center">
+          <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center space-y-2">
             <p className="text-accent font-display font-bold text-xl flex items-center justify-center gap-2">
               <Zap className="w-5 h-5" /> Vez de: {currentPlayer.nickname}
             </p>
+            <p className="text-sm text-muted-foreground font-body">Jogo iniciado</p>
           </div>
         )}
 
-        {/* Players */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-muted-foreground font-body text-lg">
-              <Users className="w-6 h-6" />
-              <span>
-                {players.length} jogador{players.length !== 1 ? "es" : ""} conectado{players.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-          </div>
+        <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
 
-          {players.length === 0 ? (
-            <div className="p-12 rounded-2xl bg-card/50 border border-border text-center">
-              <p className="text-muted-foreground font-body text-lg animate-pulse-slow">
-                Aguardando jogadores...
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {players.map((player, i) => (
-                <div
-                  key={player.id}
-                  className={`flex items-center gap-3 p-4 rounded-xl border animate-bounce-in ${
-                    player.id === game.jogador_atual_id
-                      ? "bg-accent/10 border-accent/30 ring-2 ring-accent/20"
-                      : "bg-card border-border"
-                  }`}
-                  style={{ animationDelay: `${i * 0.05}s` }}
-                >
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center text-xl font-display font-bold shrink-0"
-                    style={{ backgroundColor: player.cor_empilhadeira, color: "#1a1a2e" }}
-                  >
-                    {player.nickname[0].toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="font-display font-medium text-foreground text-lg truncate block">
-                      {player.nickname}
-                    </span>
-                    {isStarted && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${(player.posicao / 42) * 100}%`,
-                              backgroundColor: player.cor_empilhadeira,
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs font-display font-bold text-muted-foreground">
-                          {player.posicao}/42
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {player.id === game.jogador_atual_id && game.status !== "finalizado" && (
-                    <Zap className="w-5 h-5 text-accent shrink-0" />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <AdminPlayersPanel
+          players={players}
+          currentPlayerId={game.jogador_atual_id}
+          gameFinished={game.status === "finalizado"}
+        />
 
         {/* Start button */}
         {game.status === "aguardando" && (
