@@ -26,29 +26,38 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
         .order("created_at", { ascending: true });
 
       console.log("[WaitingLobby] SELECT:", { data, error });
-      if (data) setPlayers(data);
+      if (!error && data) setPlayers(data);
+    };
+
+    const fetchGame = async () => {
+      const { data, error } = await supabase
+        .from("jogos")
+        .select("status")
+        .eq("id", gameId)
+        .single();
+
+      console.log("[WaitingLobby] Game SELECT:", { data, error });
+
+      if (!error && data?.status === "em_andamento") {
+        onGameStart();
+      }
     };
 
     fetchPlayers();
+    fetchGame();
 
-    // Listen for new players
     const playersChannel = supabase
       .channel(`lobby-jogadores-${gameId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
+        { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
         (payload) => {
-          console.log("[WaitingLobby] Realtime INSERT:", payload.new);
-          const newPlayer = payload.new as Player;
-          setPlayers((prev) => {
-            if (prev.some((p) => p.id === newPlayer.id)) return prev;
-            return [...prev, newPlayer];
-          });
+          console.log("[WaitingLobby] Realtime jogadores:", payload);
+          fetchPlayers();
         }
       )
-      .subscribe();
+      .subscribe((status) => console.log("[WaitingLobby] players subscription:", status));
 
-    // Listen for game status change
     const gameChannel = supabase
       .channel(`lobby-jogo-${gameId}`)
       .on(
@@ -56,13 +65,10 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
         { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` },
         (payload) => {
           console.log("[WaitingLobby] Game UPDATE:", payload.new);
-          const updated = payload.new as { status: string };
-          if (updated.status === "em_andamento") {
-            onGameStart();
-          }
+          fetchGame();
         }
       )
-      .subscribe();
+      .subscribe((status) => console.log("[WaitingLobby] game subscription:", status));
 
     return () => {
       supabase.removeChannel(playersChannel);
@@ -104,7 +110,7 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
               >
                 <div
                   className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-display font-bold shrink-0"
-                  style={{ backgroundColor: player.cor_empilhadeira, color: "#1a1a2e" }}
+                  style={{ backgroundColor: player.cor_empilhadeira, color: "hsl(var(--background))" }}
                 >
                   {player.nickname[0].toUpperCase()}
                 </div>

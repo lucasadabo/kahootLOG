@@ -41,40 +41,44 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState("");
   const [eventMessage, setEventMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isMyTurn = currentPlayerId === playerId;
 
   const fetchGameState = useCallback(async () => {
-    const { data: jogoData } = await supabase
+    const { data: jogoData, error: jogoError } = await supabase
       .from("jogos")
       .select("jogador_atual_id, status")
       .eq("id", gameId)
       .single();
 
-    if (jogoData) {
-      console.log("[GamePlay] Game state:", jogoData);
+    console.log("[GamePlay] Game state SELECT:", { jogoData, jogoError });
+
+    if (!jogoError && jogoData) {
       setCurrentPlayerId(jogoData.jogador_atual_id);
       setGameStatus(jogoData.status);
       if (jogoData.status === "finalizado") {
-        // Find winner
-        const { data: winner } = await supabase
+        const { data: winner, error: winnerError } = await supabase
           .from("jogadores")
           .select("id")
           .eq("jogo_id", gameId)
           .eq("posicao", 42)
           .maybeSingle();
+
+        console.log("[GamePlay] Winner SELECT:", { winner, winnerError });
         if (winner) setWinnerId(winner.id);
       }
     }
 
-    const { data: jogadoresData } = await supabase
+    const { data: jogadoresData, error: jogadoresError } = await supabase
       .from("jogadores")
       .select("id, nickname, cor_empilhadeira, posicao")
       .eq("jogo_id", gameId)
       .order("created_at", { ascending: true });
 
-    if (jogadoresData) {
-      console.log("[GamePlay] Players:", jogadoresData);
+    console.log("[GamePlay] Players SELECT:", { jogadoresData, jogadoresError });
+
+    if (!jogadoresError && jogadoresData) {
       setPlayers(jogadoresData);
     }
   }, [gameId]);
@@ -90,11 +94,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         (payload) => {
           console.log("[GamePlay] jogos UPDATE:", payload.new);
           const g = payload.new as { jogador_atual_id: string; status: string };
-          setCurrentPlayerId(g.jogador_atual_id);
-          setGameStatus(g.status);
-          if (g.status === "finalizado") {
-            fetchGameState();
-          }
+          fetchGameState();
           // Reset phase when turn changes to me
           if (g.jogador_atual_id === playerId) {
             setPhase("waiting");
@@ -102,6 +102,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
             setPergunta(null);
             setSelectedAnswer(null);
             setEventMessage(null);
+            setErrorMessage(null);
           } else {
             setPhase("waiting");
           }
@@ -109,16 +110,13 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
+        { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
         (payload) => {
-          console.log("[GamePlay] jogadores UPDATE:", payload.new);
-          const updated = payload.new as PlayerState;
-          setPlayers((prev) =>
-            prev.map((p) => (p.id === updated.id ? { ...p, posicao: updated.posicao } : p))
-          );
+          console.log("[GamePlay] jogadores realtime:", payload);
+          fetchGameState();
         }
       )
-      .subscribe();
+      .subscribe((status) => console.log("[GamePlay] subscription:", status));
 
     return () => {
       supabase.removeChannel(channel);
@@ -126,6 +124,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   }, [gameId, playerId, fetchGameState]);
 
   const handleRollDice = async () => {
+    setErrorMessage(null);
     setDiceAnimating(true);
     setPhase("rolling");
 
@@ -142,45 +141,80 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         setPhase("rolled");
         console.log("[GamePlay] Dice rolled:", finalValue);
 
-        // Fetch question
-        fetchQuestion();
+        fetchQuestion(finalValue);
       }
     }, 100);
   };
 
-  const fetchQuestion = async () => {
+  const fetchQuestion = async (rolledValue: number) => {
     const { data, error } = await supabase.rpc("pegar_pergunta");
-    console.log("[GamePlay] Pergunta:", { data, error });
-    if (data) {
-      setPergunta(data as unknown as Pergunta);
-      setPhase("question");
+    console.log("[GamePlay] pegar_pergunta RPC:", { data, error });
+
+    if (error || !data || typeof data !== "object" || !("id" in data)) {
+      setErrorMessage("Não foi possível carregar uma pergunta real do banco.");
+      setDiceValue(rolledValue);
+      setPhase("waiting");
+      return;
     }
+
+    const questionId = String((data as { id: string }).id);
+
+    const { data: perguntaData, error: perguntaError } = await supabase
+      .from("perguntas")
+      .select("id, texto, alternativa_a, alternativa_b, alternativa_c, alternativa_d")
+      .eq("id", questionId)
+      .single();
+
+    console.log("[GamePlay] Pergunta SELECT:", { perguntaData, perguntaError });
+
+    if (perguntaError || !perguntaData) {
+      setErrorMessage("A pergunta retornada não foi encontrada no banco.");
+      setPhase("waiting");
+      return;
+    }
+
+    setPergunta(perguntaData);
+    setPhase("question");
   };
 
   const handleAnswer = async (answer: string) => {
     if (!pergunta || !diceValue) return;
     setSelectedAnswer(answer);
+    setErrorMessage(null);
 
-    // Get current position BEFORE the move (from Supabase)
-    const { data: playerBefore } = await supabase
+    const { data: playerBefore, error: playerBeforeError } = await supabase
       .from("jogadores")
       .select("posicao")
       .eq("id", playerId)
       .single();
-    const posicaoAntes = playerBefore?.posicao ?? 0;
-    console.log("[GamePlay] Position before move:", posicaoAntes);
 
-    // Check answer by fetching the correct one
-    const { data: fullPergunta } = await supabase
+    console.log("[GamePlay] Position before SELECT:", { playerBefore, playerBeforeError });
+
+    if (playerBeforeError || !playerBefore) {
+      setErrorMessage("Não foi possível confirmar a posição atual no banco.");
+      setPhase("waiting");
+      return;
+    }
+
+    const posicaoAntes = playerBefore?.posicao ?? 0;
+
+    const { data: fullPergunta, error: fullPerguntaError } = await supabase
       .from("perguntas")
       .select("resposta_correta")
       .eq("id", pergunta.id)
       .single();
 
+    console.log("[GamePlay] Correct answer SELECT:", { fullPergunta, fullPerguntaError });
+
+    if (fullPerguntaError || !fullPergunta) {
+      setErrorMessage("Não foi possível validar a resposta com a pergunta salva no banco.");
+      setPhase("waiting");
+      return;
+    }
+
     const acertou = fullPergunta?.resposta_correta === answer;
     console.log("[GamePlay] Answer:", { answer, correct: fullPergunta?.resposta_correta, acertou });
 
-    // Call jogar function
     const { data: resultado, error } = await supabase.rpc("jogar", {
       p_jogo_id: gameId,
       p_jogador_id: playerId,
@@ -200,7 +234,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const res = resultado as unknown as { nova_posicao: number; evento: string | null; venceu: boolean };
 
-    // INSERT into rodadas table
     const { data: rodadaData, error: rodadaError } = await supabase
       .from("rodadas")
       .insert({
@@ -218,25 +251,40 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     console.log("[GamePlay] rodada INSERT:", { rodadaData, rodadaError });
 
-    // Validate rodada was persisted
     if (rodadaError || !rodadaData) {
       console.error("[GamePlay] FALHA ao registrar rodada!", rodadaError);
+      setErrorMessage("A rodada não foi persistida no banco.");
+      setPhase("waiting");
+      return;
     } else {
-      const { data: rodadaCheck } = await supabase
+      const { data: rodadaCheck, error: rodadaCheckError } = await supabase
         .from("rodadas")
         .select("id")
         .eq("id", rodadaData.id)
         .single();
-      console.log("[GamePlay] rodada VALIDATION:", rodadaCheck ? "✅ Persistido" : "❌ NÃO encontrado");
+
+      console.log("[GamePlay] rodada VALIDATION SELECT:", { rodadaCheck, rodadaCheckError });
+
+      if (rodadaCheckError || !rodadaCheck) {
+        setErrorMessage("A rodada inserida não foi encontrada no banco.");
+        setPhase("waiting");
+        return;
+      }
     }
 
-    // Validate player position was updated in DB
-    const { data: playerAfter } = await supabase
+    const { data: playerAfter, error: playerAfterError } = await supabase
       .from("jogadores")
       .select("posicao")
       .eq("id", playerId)
       .single();
-    console.log("[GamePlay] Position after move (DB):", playerAfter?.posicao);
+
+    console.log("[GamePlay] Position after SELECT:", { playerAfter, playerAfterError });
+
+    if (playerAfterError || !playerAfter) {
+      setErrorMessage("A nova posição do jogador não foi confirmada no banco.");
+      setPhase("waiting");
+      return;
+    }
 
     if (acertou) {
       setResultMessage(`✅ Correto! Você avançou ${diceValue} casas → Casa ${res.nova_posicao}`);
@@ -255,7 +303,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     setPhase("result");
 
-    // After 3 seconds, advance to next turn
     if (!res.venceu) {
       setTimeout(async () => {
         const { error: turnoError } = await supabase.rpc("proximo_turno", { p_jogo_id: gameId });
@@ -290,6 +337,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   return (
     <div className="min-h-screen flex flex-col px-4 py-6">
       <div className="w-full max-w-md mx-auto space-y-6">
+        {errorMessage && (
+          <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-center">
+            <p className="font-body text-destructive font-medium">{errorMessage}</p>
+          </div>
+        )}
+
         {/* Status header */}
         <div className="text-center space-y-2">
           <p className="text-muted-foreground font-body text-sm">

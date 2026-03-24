@@ -64,8 +64,22 @@ export default function JoinGame() {
         return;
       }
 
+      const { data: insertedPlayer, error: insertedPlayerError } = await supabase
+        .from("jogadores")
+        .select("id, jogo_id, nickname, cor_empilhadeira")
+        .eq("id", insertData.id)
+        .single();
+
+      console.log("[JoinGame] INSERT validation SELECT:", { insertedPlayer, insertedPlayerError });
+
+      if (insertedPlayerError || !insertedPlayer) {
+        setError("Erro ao confirmar sua entrada no banco. Tente novamente.");
+        setLoading(false);
+        return;
+      }
+
       setGameId(jogo.id);
-      setPlayerId(insertData.id);
+      setPlayerId(insertedPlayer.id);
       setNickname(nick.trim());
     } catch (err) {
       console.error("[JoinGame] Error:", err);
