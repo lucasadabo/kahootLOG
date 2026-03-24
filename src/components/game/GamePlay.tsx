@@ -161,6 +161,15 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     if (!pergunta || !diceValue) return;
     setSelectedAnswer(answer);
 
+    // Get current position BEFORE the move (from Supabase)
+    const { data: playerBefore } = await supabase
+      .from("jogadores")
+      .select("posicao")
+      .eq("id", playerId)
+      .single();
+    const posicaoAntes = playerBefore?.posicao ?? 0;
+    console.log("[GamePlay] Position before move:", posicaoAntes);
+
     // Check answer by fetching the correct one
     const { data: fullPergunta } = await supabase
       .from("perguntas")
@@ -182,7 +191,52 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     console.log("[GamePlay] jogar result:", { resultado, error });
 
+    if (error) {
+      console.error("[GamePlay] jogar ERROR:", error);
+      setResultMessage("❌ Erro ao processar jogada. Tente novamente.");
+      setPhase("result");
+      return;
+    }
+
     const res = resultado as unknown as { nova_posicao: number; evento: string | null; venceu: boolean };
+
+    // INSERT into rodadas table
+    const { data: rodadaData, error: rodadaError } = await supabase
+      .from("rodadas")
+      .insert({
+        jogo_id: gameId,
+        jogador_id: playerId,
+        pergunta_id: pergunta.id,
+        dado: diceValue,
+        acertou,
+        posicao_antes: posicaoAntes,
+        posicao_depois: res.nova_posicao,
+        evento: res.evento,
+      })
+      .select("id")
+      .single();
+
+    console.log("[GamePlay] rodada INSERT:", { rodadaData, rodadaError });
+
+    // Validate rodada was persisted
+    if (rodadaError || !rodadaData) {
+      console.error("[GamePlay] FALHA ao registrar rodada!", rodadaError);
+    } else {
+      const { data: rodadaCheck } = await supabase
+        .from("rodadas")
+        .select("id")
+        .eq("id", rodadaData.id)
+        .single();
+      console.log("[GamePlay] rodada VALIDATION:", rodadaCheck ? "✅ Persistido" : "❌ NÃO encontrado");
+    }
+
+    // Validate player position was updated in DB
+    const { data: playerAfter } = await supabase
+      .from("jogadores")
+      .select("posicao")
+      .eq("id", playerId)
+      .single();
+    console.log("[GamePlay] Position after move (DB):", playerAfter?.posicao);
 
     if (acertou) {
       setResultMessage(`✅ Correto! Você avançou ${diceValue} casas → Casa ${res.nova_posicao}`);
@@ -204,8 +258,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     // After 3 seconds, advance to next turn
     if (!res.venceu) {
       setTimeout(async () => {
-        await supabase.rpc("proximo_turno", { p_jogo_id: gameId });
-        console.log("[GamePlay] proximo_turno called");
+        const { error: turnoError } = await supabase.rpc("proximo_turno", { p_jogo_id: gameId });
+        console.log("[GamePlay] proximo_turno called", turnoError ? `ERROR: ${turnoError.message}` : "✅ OK");
       }, 3000);
     }
   };
