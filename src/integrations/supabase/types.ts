@@ -120,6 +120,67 @@ export type Database = {
         }
         Relationships: []
       }
+      rodadas: {
+        Row: {
+          acertou: boolean
+          created_at: string
+          dado: number
+          evento: string | null
+          id: string
+          jogador_id: string
+          jogo_id: string
+          pergunta_id: string
+          posicao_antes: number
+          posicao_depois: number
+        }
+        Insert: {
+          acertou: boolean
+          created_at?: string
+          dado: number
+          evento?: string | null
+          id?: string
+          jogador_id: string
+          jogo_id: string
+          pergunta_id: string
+          posicao_antes: number
+          posicao_depois: number
+        }
+        Update: {
+          acertou?: boolean
+          created_at?: string
+          dado?: number
+          evento?: string | null
+          id?: string
+          jogador_id?: string
+          jogo_id?: string
+          pergunta_id?: string
+          posicao_antes?: number
+          posicao_depois?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rodadas_jogador_id_fkey"
+            columns: ["jogador_id"]
+            isOneToOne: false
+            referencedRelation: "jogadores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodadas_jogo_id_fkey"
+            columns: ["jogo_id"]
+            isOneToOne: false
+            referencedRelation: "jogos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodadas_pergunta_id_fkey"
+            columns: ["pergunta_id"]
+            isOneToOne: false
+            referencedRelation: "perguntas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
