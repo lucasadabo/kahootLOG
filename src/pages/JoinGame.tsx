@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { gameSupabase } from "@/lib/gameSupabase";
 import { JoinForm } from "@/components/game/JoinForm";
 import { WaitingLobby } from "@/components/game/WaitingLobby";
 import { GamePlay } from "@/components/game/GamePlay";
@@ -18,7 +18,7 @@ export default function JoinGame() {
   const [gameId, setGameId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
-  const [gameStatus, setGameStatus] = useState<string>("aguardando");
+  const [gameStatus, setGameStatus] = useState<string>("waiting");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -27,22 +27,21 @@ export default function JoinGame() {
     setLoading(true);
 
     try {
-      const { data: jogo, error: jogoError } = await supabase
+      const { data: jogo, error: jogoError } = await gameSupabase
         .from("jogos")
-        .select("id")
+        .select("id, status")
         .eq("pin", pin)
         .maybeSingle();
 
-      console.log("[JoinGame] PIN lookup:", { pin, jogo, jogoError });
+      console.log("[JoinGame] PIN lookup SELECT:", { pin, jogo, jogoError });
 
       if (jogoError) throw jogoError;
       if (!jogo) {
         setError("PIN inválido! Verifique e tente novamente.");
-        setLoading(false);
         return;
       }
 
-      const { data: insertData, error: insertError } = await supabase
+      const { data: insertData, error: insertError } = await gameSupabase
         .from("jogadores")
         .insert({
           jogo_id: jogo.id,
@@ -52,35 +51,36 @@ export default function JoinGame() {
         .select("id")
         .single();
 
-      console.log("[JoinGame] INSERT:", { insertData, insertError });
+      console.log("[JoinGame] jogador INSERT:", { insertData, insertError });
 
-      if (insertError) {
-        if (insertError.code === "23505") {
+      if (insertError || !insertData) {
+        console.error("[JoinGame] jogador INSERT ERROR:", insertError);
+        if (insertError?.code === "23505") {
           setError("Esse nickname já está em uso! Escolha outro.");
         } else {
           setError("Erro ao entrar no jogo. Tente novamente.");
         }
-        setLoading(false);
         return;
       }
 
-      const { data: insertedPlayer, error: insertedPlayerError } = await supabase
+      const { data: insertedPlayer, error: insertedPlayerError } = await gameSupabase
         .from("jogadores")
-        .select("id, jogo_id, nickname, cor_empilhadeira")
+        .select("id, jogo_id, nickname, cor_empilhadeira, posicao")
         .eq("id", insertData.id)
         .single();
 
-      console.log("[JoinGame] INSERT validation SELECT:", { insertedPlayer, insertedPlayerError });
+      console.log("[JoinGame] jogador validation SELECT:", { insertedPlayer, insertedPlayerError });
 
       if (insertedPlayerError || !insertedPlayer) {
+        console.error("[JoinGame] jogador validation ERROR:", insertedPlayerError);
         setError("Erro ao confirmar sua entrada no banco. Tente novamente.");
-        setLoading(false);
         return;
       }
 
       setGameId(jogo.id);
       setPlayerId(insertedPlayer.id);
-      setNickname(nick.trim());
+      setNickname(insertedPlayer.nickname);
+      setGameStatus(jogo.status ?? "waiting");
     } catch (err) {
       console.error("[JoinGame] Error:", err);
       setError("Erro inesperado. Tente novamente.");
@@ -89,7 +89,7 @@ export default function JoinGame() {
     }
   };
 
-  if (gameId && playerId && gameStatus === "em_andamento") {
+  if (gameId && playerId && (gameStatus === "playing" || gameStatus === "finished")) {
     return <GamePlay gameId={gameId} playerId={playerId} nickname={nickname} />;
   }
 
@@ -98,7 +98,7 @@ export default function JoinGame() {
       <WaitingLobby
         gameId={gameId}
         nickname={nickname}
-        onGameStart={() => setGameStatus("em_andamento")}
+        onGameStart={() => setGameStatus("playing")}
       />
     );
   }
