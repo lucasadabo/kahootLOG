@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { gameSupabase } from "@/lib/gameSupabase";
 import { Users, Loader2 } from "lucide-react";
 
 interface Player {
@@ -19,26 +19,26 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
 
   useEffect(() => {
     const fetchPlayers = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await gameSupabase
         .from("jogadores")
         .select("id, nickname, cor_empilhadeira")
         .eq("jogo_id", gameId)
         .order("created_at", { ascending: true });
 
-      console.log("[WaitingLobby] SELECT:", { data, error });
+      console.log("[WaitingLobby] jogadores SELECT:", { data, error });
       if (!error && data) setPlayers(data);
     };
 
     const fetchGame = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await gameSupabase
         .from("jogos")
         .select("status")
         .eq("id", gameId)
         .single();
 
-      console.log("[WaitingLobby] Game SELECT:", { data, error });
+      console.log("[WaitingLobby] jogo SELECT:", { data, error });
 
-      if (!error && data?.status === "em_andamento") {
+      if (!error && (data?.status === "playing" || data?.status === "finished")) {
         onGameStart();
       }
     };
@@ -46,33 +46,33 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
     fetchPlayers();
     fetchGame();
 
-    const playersChannel = supabase
+    const playersChannel = gameSupabase
       .channel(`lobby-jogadores-${gameId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` },
         (payload) => {
-          console.log("[WaitingLobby] Realtime jogadores:", payload);
+          console.log("[WaitingLobby] jogadores realtime:", payload);
           fetchPlayers();
         }
       )
       .subscribe((status) => console.log("[WaitingLobby] players subscription:", status));
 
-    const gameChannel = supabase
+    const gameChannel = gameSupabase
       .channel(`lobby-jogo-${gameId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` },
         (payload) => {
-          console.log("[WaitingLobby] Game UPDATE:", payload.new);
+          console.log("[WaitingLobby] jogo realtime:", payload.new);
           fetchGame();
         }
       )
       .subscribe((status) => console.log("[WaitingLobby] game subscription:", status));
 
     return () => {
-      supabase.removeChannel(playersChannel);
-      supabase.removeChannel(gameChannel);
+      gameSupabase.removeChannel(playersChannel);
+      gameSupabase.removeChannel(gameChannel);
     };
   }, [gameId, onGameStart]);
 
@@ -87,8 +87,7 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
             Aguardando o jogo iniciar...
           </h1>
           <p className="text-muted-foreground font-body">
-            Você entrou como{" "}
-            <span className="text-primary font-bold">{nickname}</span>
+            Você entrou como <span className="text-primary font-bold">{nickname}</span>
           </p>
         </div>
 

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Monitor, Users, Play, Plus, Copy, Check, Trophy, Zap } from "lucide-react";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Zap } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
+import { gameSupabase } from "@/lib/gameSupabase";
 
 interface Player {
   id: string;
@@ -14,9 +14,9 @@ interface Player {
 interface Game {
   id: string;
   pin: string;
-  nome: string;
-  status: string;
+  status: string | null;
   jogador_atual_id: string | null;
+  vencedor_id: string | null;
 }
 
 export default function Admin() {
@@ -27,27 +27,31 @@ export default function Admin() {
   const [copied, setCopied] = useState(false);
 
   const fetchGame = useCallback(async (gameId: string) => {
-    const { data, error } = await supabase
+    const { data, error } = await gameSupabase
       .from("jogos")
-      .select("id, pin, nome, status, jogador_atual_id")
+      .select("id, pin, status, jogador_atual_id, vencedor_id")
       .eq("id", gameId)
       .single();
 
     console.log("[Admin] jogo SELECT:", { data, error });
 
     if (!error && data) {
-      setGame({ ...data, jogador_atual_id: data.jogador_atual_id ?? null } as Game);
+      setGame({
+        ...data,
+        jogador_atual_id: data.jogador_atual_id ?? null,
+        vencedor_id: data.vencedor_id ?? null,
+      });
     }
   }, []);
 
   const fetchPlayers = useCallback(async (gameId: string) => {
-    const { data, error } = await supabase
+    const { data, error } = await gameSupabase
       .from("jogadores")
       .select("id, nickname, cor_empilhadeira, posicao")
       .eq("jogo_id", gameId)
       .order("created_at", { ascending: true });
 
-    console.log("jogadores carregados:", { data, error });
+    console.log("[Admin] jogadores SELECT:", { data, error });
 
     if (!error && data) {
       setPlayers(data);
@@ -60,7 +64,7 @@ export default function Admin() {
     fetchGame(game.id);
     fetchPlayers(game.id);
 
-    const channel = supabase
+    const channel = gameSupabase
       .channel(`admin-${game.id}`)
       .on(
         "postgres_changes",
@@ -76,37 +80,40 @@ export default function Admin() {
         (payload) => {
           console.log("[Admin] jogo realtime:", payload);
           fetchGame(game.id);
-          fetchPlayers(game.id);
         }
       )
       .subscribe((status) => console.log("[Admin] subscription:", status));
 
     return () => {
-      supabase.removeChannel(channel);
+      gameSupabase.removeChannel(channel);
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
   const handleCreateGame = async () => {
     setCreating(true);
     try {
-      const { data, error } = await supabase.rpc("criar_jogo");
-      if (error) throw error;
+      const { data, error } = await gameSupabase.rpc("criar_jogo");
+      console.log("[Admin] criar_jogo RPC:", { data, error });
+      if (error || !data) throw error;
 
       const gameId = data as string;
-      console.log("jogo criado:", gameId);
-
-      const { data: jogoData, error: fetchError } = await supabase
+      const { data: jogoData, error: fetchError } = await gameSupabase
         .from("jogos")
-        .select("*")
+        .select("id, pin, status, jogador_atual_id, vencedor_id")
         .eq("id", gameId)
         .single();
 
-      if (fetchError) throw fetchError;
-      console.log("jogo carregado:", jogoData);
-      setGame({ ...jogoData, jogador_atual_id: jogoData.jogador_atual_id ?? null } as Game);
+      console.log("[Admin] jogo pós-criação SELECT:", { jogoData, fetchError });
+      if (fetchError || !jogoData) throw fetchError;
+
+      setGame({
+        ...jogoData,
+        jogador_atual_id: jogoData.jogador_atual_id ?? null,
+        vencedor_id: jogoData.vencedor_id ?? null,
+      });
       setPlayers([]);
     } catch (err) {
-      console.error("Erro ao criar jogo:", err);
+      console.error("[Admin] Erro ao criar jogo:", err);
     } finally {
       setCreating(false);
     }
@@ -116,12 +123,13 @@ export default function Admin() {
     if (!game) return;
     setStarting(true);
     try {
-      const { error } = await supabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
+      const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
+      console.log("[Admin] iniciar_jogo RPC:", { gameId: game.id, error });
       if (error) throw error;
-      console.log("início do jogo:", game.id);
       await fetchGame(game.id);
+      await fetchPlayers(game.id);
     } catch (err) {
-      console.error("Erro ao iniciar jogo:", err);
+      console.error("[Admin] Erro ao iniciar jogo:", err);
     } finally {
       setStarting(false);
     }
@@ -135,8 +143,8 @@ export default function Admin() {
   };
 
   const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
-  const winner = players.find((p) => p.posicao >= 42);
-  const isStarted = game?.status === "em_andamento" || game?.status === "finalizado";
+  const winner = players.find((p) => p.id === game?.vencedor_id) ?? players.find((p) => p.posicao >= 42);
+  const isStarted = game?.status === "playing" || game?.status === "finished";
 
   if (!game) {
     return (
@@ -146,26 +154,15 @@ export default function Admin() {
             <Monitor className="w-12 h-12 text-primary" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-4xl font-display font-bold text-primary text-glow">
-              Painel do Professor
-            </h1>
-            <p className="text-muted-foreground font-body text-lg">
-              Crie um jogo e compartilhe o PIN com seus alunos
-            </p>
+            <h1 className="text-4xl font-display font-bold text-primary text-glow">Painel do Professor</h1>
+            <p className="text-muted-foreground font-body text-lg">Crie um jogo e compartilhe o PIN com seus alunos</p>
           </div>
           <button
             onClick={handleCreateGame}
             disabled={creating}
             className="inline-flex items-center gap-3 h-20 px-12 rounded-2xl bg-primary text-primary-foreground text-2xl font-display font-bold shadow-[var(--shadow-glow)] hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:hover:scale-100"
           >
-            {creating ? (
-              <span className="animate-pulse-slow">Criando...</span>
-            ) : (
-              <>
-                <Plus className="w-7 h-7" />
-                Criar Jogo
-              </>
-            )}
+            {creating ? <span className="animate-pulse-slow">Criando...</span> : <><Plus className="w-7 h-7" />Criar Jogo</>}
           </button>
         </div>
       </div>
@@ -175,15 +172,10 @@ export default function Admin() {
   return (
     <div className="min-h-screen flex flex-col px-6 py-8">
       <div className="w-full max-w-4xl mx-auto space-y-8">
-        {/* PIN Display */}
         <div className="text-center space-y-4">
-          <p className="text-muted-foreground font-body text-lg uppercase tracking-widest">
-            PIN do Jogo
-          </p>
+          <p className="text-muted-foreground font-body text-lg uppercase tracking-widest">PIN do Jogo</p>
           <div className="flex items-center justify-center gap-4">
-            <div className="text-8xl md:text-9xl font-display font-bold text-primary text-glow tracking-[0.3em] select-all">
-              {game.pin}
-            </div>
+            <div className="text-8xl md:text-9xl font-display font-bold text-primary text-glow tracking-[0.3em] select-all">{game.pin}</div>
             <button
               onClick={handleCopyPin}
               className="p-3 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all"
@@ -191,22 +183,17 @@ export default function Admin() {
               {copied ? <Check className="w-6 h-6 text-accent" /> : <Copy className="w-6 h-6" />}
             </button>
           </div>
-          <p className="text-muted-foreground font-body">
-            Peça aos alunos para acessarem <span className="text-accent font-bold">/join</span> e digitarem este PIN
-          </p>
+          <p className="text-muted-foreground font-body">Peça aos alunos para acessarem <span className="text-accent font-bold">/join</span> e digitarem este PIN</p>
         </div>
 
-        {/* Game status */}
-        {game.status === "finalizado" && winner && (
+        {game.status === "finished" && winner && (
           <div className="p-6 rounded-xl bg-primary/10 border border-primary/30 text-center animate-bounce-in">
             <Trophy className="w-12 h-12 text-primary mx-auto mb-2" />
-            <p className="text-primary font-display font-bold text-2xl">
-              🏆 {winner.nickname} venceu o jogo!
-            </p>
+            <p className="text-primary font-display font-bold text-2xl">🏆 {winner.nickname} venceu o jogo!</p>
           </div>
         )}
 
-        {isStarted && currentPlayer && game.status !== "finalizado" && (
+        {isStarted && currentPlayer && game.status !== "finished" && (
           <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center space-y-2">
             <p className="text-accent font-display font-bold text-xl flex items-center justify-center gap-2">
               <Zap className="w-5 h-5" /> Vez de: {currentPlayer.nickname}
@@ -217,28 +204,16 @@ export default function Admin() {
 
         <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
 
-        <AdminPlayersPanel
-          players={players}
-          currentPlayerId={game.jogador_atual_id}
-          gameFinished={game.status === "finalizado"}
-        />
+        <AdminPlayersPanel players={players} currentPlayerId={game.jogador_atual_id} gameFinished={game.status === "finished"} />
 
-        {/* Start button */}
-        {game.status === "aguardando" && (
+        {!game.status && (
           <div className="flex justify-center pt-4">
             <button
               onClick={handleStartGame}
               disabled={starting || players.length === 0}
               className="inline-flex items-center gap-3 h-20 px-16 rounded-2xl bg-accent text-accent-foreground text-2xl font-display font-bold hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed"
             >
-              {starting ? (
-                <span className="animate-pulse-slow">Iniciando...</span>
-              ) : (
-                <>
-                  <Play className="w-7 h-7" />
-                  Iniciar Jogo
-                </>
-              )}
+              {starting ? <span className="animate-pulse-slow">Iniciando...</span> : <><Play className="w-7 h-7" />Iniciar Jogo</>}
             </button>
           </div>
         )}
