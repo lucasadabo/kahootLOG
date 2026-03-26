@@ -1,6 +1,6 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
 interface Player {
@@ -46,8 +46,22 @@ function getForkliftPosition(position: number, stackIndex: number) {
 }
 
 function ForkliftPawn({ color, label, active, position }: { color: string; label: string; active: boolean; position: THREE.Vector3 }) {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.position.copy(position);
+    }
+  }, []);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+
+    groupRef.current.position.lerp(position, 1 - Math.exp(-4 * delta));
+  });
+
   return (
-    <group position={position}>
+    <group ref={groupRef}>
       {active && <mesh position={[0, 1.5, 0]}>
         <sphereGeometry args={[0.14, 24, 24]} />
         <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.8} />
@@ -234,7 +248,7 @@ export function WarehouseBoard3D({ players, currentPlayerId }: WarehouseBoard3DP
       </div>
 
       <div className="h-[520px] w-full">
-        <Canvas shadows camera={{ position: [0, 11.5, 9], fov: 42 }}>
+        <Canvas shadows gl={{ antialias: true }} camera={{ position: [0, 11.5, 9], fov: 42 }}>
           <WarehouseScene players={players} currentPlayerId={currentPlayerId} />
         </Canvas>
       </div>

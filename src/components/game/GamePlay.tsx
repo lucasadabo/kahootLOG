@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Trophy, Clock, Zap } from "lucide-react";
 import { gameSupabase } from "@/lib/gameSupabase";
 
@@ -41,6 +41,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [resultMessage, setResultMessage] = useState("");
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const rollTimeoutRef = useRef<number | null>(null);
 
   const isMyTurn = currentPlayerId === playerId;
 
@@ -99,6 +100,9 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       .subscribe((status) => console.log("[GamePlay] subscription:", status));
 
     return () => {
+      if (rollTimeoutRef.current) {
+        window.clearTimeout(rollTimeoutRef.current);
+      }
       gameSupabase.removeChannel(channel);
     };
   }, [gameId, playerId, fetchGameState]);
@@ -111,7 +115,9 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       console.error("[GamePlay] pegar_pergunta ERROR:", error, data);
       setErrorMessage("Não foi possível carregar uma pergunta real do banco.");
       setDiceValue(rolledValue);
-      setPhase("waiting");
+      rollTimeoutRef.current = window.setTimeout(() => {
+        setPhase("waiting");
+      }, 1800);
       return;
     }
 
@@ -127,24 +133,35 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     if (perguntaError || !perguntaData) {
       console.error("[GamePlay] pergunta SELECT ERROR:", perguntaError);
       setErrorMessage("A pergunta retornada não foi encontrada no banco.");
-      setPhase("waiting");
+      rollTimeoutRef.current = window.setTimeout(() => {
+        setPhase("waiting");
+      }, 1800);
       return;
     }
 
-    setPergunta({
-      id: perguntaData.id,
-      texto: perguntaData.texto,
-      alternativa_a: perguntaData.alternativa_a,
-      alternativa_b: perguntaData.alternativa_b,
-      alternativa_c: perguntaData.alternativa_c,
-      alternativa_d: perguntaData.alternativa_d,
-      resposta_correta: perguntaData.resposta_correta,
-    });
-    setPhase("question");
+    rollTimeoutRef.current = window.setTimeout(() => {
+      setPergunta({
+        id: perguntaData.id,
+        texto: perguntaData.texto,
+        alternativa_a: perguntaData.alternativa_a,
+        alternativa_b: perguntaData.alternativa_b,
+        alternativa_c: perguntaData.alternativa_c,
+        alternativa_d: perguntaData.alternativa_d,
+        resposta_correta: perguntaData.resposta_correta,
+      });
+      setPhase("question");
+    }, 1800);
   };
 
   const handleRollDice = async () => {
     setErrorMessage(null);
+    setPergunta(null);
+    setSelectedAnswer(null);
+    setResultMessage("");
+    setEventMessage(null);
+    if (rollTimeoutRef.current) {
+      window.clearTimeout(rollTimeoutRef.current);
+    }
     setDiceAnimating(true);
     setPhase("rolling");
 
@@ -341,9 +358,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
         {(phase === "rolling" || phase === "rolled") && (
           <div className="flex justify-center">
-            <div className={`p-8 rounded-2xl bg-card border-2 border-primary ${diceAnimating ? "animate-pulse" : ""}`}>
+            <div className={`p-8 rounded-2xl bg-card border-2 border-primary transition-all duration-500 ${diceAnimating ? "animate-pulse scale-105" : "scale-100"}`}>
               <DiceIcon className="w-24 h-24 text-primary" />
               <p className="text-center font-display font-bold text-3xl text-primary mt-2">{diceValue}</p>
+              {!diceAnimating && <p className="text-center text-sm text-muted-foreground font-body mt-3">Valor sorteado — carregando pergunta…</p>}
             </div>
           </div>
         )}
