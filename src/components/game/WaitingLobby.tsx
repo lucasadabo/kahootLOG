@@ -38,7 +38,7 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
 
       console.log("[WaitingLobby] jogo SELECT:", { data, error });
 
-      if (!error && (data?.status === "playing" || data?.status === "finished")) {
+      if (!error && (data?.status === "em_andamento" || data?.status === "finalizado")) {
         onGameStart();
       }
     };

@@ -18,7 +18,7 @@ export default function JoinGame() {
   const [gameId, setGameId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
-  const [gameStatus, setGameStatus] = useState<string>("waiting");
+  const [gameStatus, setGameStatus] = useState<string>("aguardando");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -80,7 +80,7 @@ export default function JoinGame() {
       setGameId(jogo.id);
       setPlayerId(insertedPlayer.id);
       setNickname(insertedPlayer.nickname);
-      setGameStatus(jogo.status ?? "waiting");
+      setGameStatus(jogo.status ?? "aguardando");
     } catch (err) {
       console.error("[JoinGame] Error:", err);
       setError("Erro inesperado. Tente novamente.");
@@ -89,7 +89,7 @@ export default function JoinGame() {
     }
   };
 
-  if (gameId && playerId && (gameStatus === "playing" || gameStatus === "finished")) {
+  if (gameId && playerId && (gameStatus === "em_andamento" || gameStatus === "finalizado")) {
     return <GamePlay gameId={gameId} playerId={playerId} nickname={nickname} />;
   }
 
@@ -98,7 +98,7 @@ export default function JoinGame() {
       <WaitingLobby
         gameId={gameId}
         nickname={nickname}
-        onGameStart={() => setGameStatus("playing")}
+        onGameStart={() => setGameStatus("em_andamento")}
       />
     );
   }

@@ -16,7 +16,7 @@ interface Pergunta {
   alternativa_b: string;
   alternativa_c: string;
   alternativa_d: string;
-  correta: string;
+  resposta_correta: string;
 }
 
 interface GamePlayProps {
@@ -31,7 +31,7 @@ type GamePhase = "waiting" | "rolling" | "rolled" | "question" | "result";
 export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [players, setPlayers] = useState<PlayerState[]>([]);
   const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null);
-  const [gameStatus, setGameStatus] = useState("playing");
+  const [gameStatus, setGameStatus] = useState("em_andamento");
   const [winnerId, setWinnerId] = useState<string | null>(null);
   const [phase, setPhase] = useState<GamePhase>("waiting");
   const [diceValue, setDiceValue] = useState<number | null>(null);
@@ -47,7 +47,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const fetchGameState = useCallback(async () => {
     const { data: jogoData, error: jogoError } = await gameSupabase
       .from("jogos")
-      .select("jogador_atual_id, status, vencedor_id")
+      .select("jogador_atual_id, status")
       .eq("id", gameId)
       .single();
 
@@ -55,8 +55,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     if (!jogoError && jogoData) {
       setCurrentPlayerId(jogoData.jogador_atual_id);
-      setGameStatus(jogoData.status ?? "waiting");
-      setWinnerId(jogoData.vencedor_id ?? null);
+      setGameStatus(jogoData.status ?? "aguardando");
     }
 
     const { data: jogadoresData, error: jogadoresError } = await gameSupabase
@@ -119,7 +118,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     const questionId = String((data as { id: string }).id);
     const { data: perguntaData, error: perguntaError } = await gameSupabase
       .from("perguntas")
-      .select("id, pergunta, alternativa_a, alternativa_b, alternativa_c, alternativa_d, correta")
+      .select("id, texto, alternativa_a, alternativa_b, alternativa_c, alternativa_d, resposta_correta")
       .eq("id", questionId)
       .single();
 
@@ -134,12 +133,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     setPergunta({
       id: perguntaData.id,
-      texto: perguntaData.pergunta,
+      texto: perguntaData.texto,
       alternativa_a: perguntaData.alternativa_a,
       alternativa_b: perguntaData.alternativa_b,
       alternativa_c: perguntaData.alternativa_c,
       alternativa_d: perguntaData.alternativa_d,
-      correta: perguntaData.correta,
+      resposta_correta: perguntaData.resposta_correta,
     });
     setPhase("question");
   };
@@ -185,7 +184,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const { data: fullPergunta, error: fullPerguntaError } = await gameSupabase
       .from("perguntas")
-      .select("id, correta")
+      .select("id, resposta_correta")
       .eq("id", pergunta.id)
       .single();
 
@@ -196,8 +195,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    const acertou = fullPergunta.correta.toUpperCase() === answer.toUpperCase();
-    console.log("[GamePlay] resposta:", { answer, correta: fullPergunta.correta, acertou });
+    const acertou = fullPergunta.resposta_correta.toUpperCase() === answer.toUpperCase();
+    console.log("[GamePlay] resposta:", { answer, correta: fullPergunta.resposta_correta, acertou });
 
     const { error: jogarError } = await gameSupabase.rpc("jogar", {
       p_jogo_id: gameId,
@@ -249,7 +248,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const { data: gameAfter, error: gameAfterError } = await gameSupabase
       .from("jogos")
-      .select("status, vencedor_id, jogador_atual_id")
+      .select("status, jogador_atual_id")
       .eq("id", gameId)
       .single();
 
@@ -267,13 +266,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     );
 
     setEventMessage(null);
-    if (gameAfter.vencedor_id) {
-      setWinnerId(gameAfter.vencedor_id);
-      setGameStatus(gameAfter.status ?? "finished");
+    if (gameAfter.status === "finalizado") {
+      setGameStatus("finalizado");
     }
     setPhase("result");
 
-    if (gameAfter.status !== "finished") {
+    if (gameAfter.status !== "finalizado") {
       setTimeout(async () => {
         const { error: turnoError } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
         console.log("[GamePlay] proximo_turno RPC:", { turnoError });
@@ -284,10 +282,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   };
 
   const currentPlayer = players.find((p) => p.id === currentPlayerId);
-  const winner = players.find((p) => p.id === winnerId);
+  const winner = players.find((p) => p.posicao >= 42);
   const myPlayer = players.find((p) => p.id === playerId);
 
-  if (gameStatus === "finished" && winner) {
+  if (gameStatus === "finalizado" && winner) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
         <div className="text-center space-y-6 animate-bounce-in">
