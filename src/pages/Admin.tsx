@@ -14,9 +14,8 @@ interface Player {
 interface Game {
   id: string;
   pin: string;
-  status: string | null;
+  status: string;
   jogador_atual_id: string | null;
-  vencedor_id: string | null;
 }
 
 export default function Admin() {
@@ -29,7 +28,7 @@ export default function Admin() {
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
       .from("jogos")
-      .select("id, pin, status, jogador_atual_id, vencedor_id")
+      .select("id, pin, status, jogador_atual_id")
       .eq("id", gameId)
       .single();
 
@@ -39,7 +38,6 @@ export default function Admin() {
       setGame({
         ...data,
         jogador_atual_id: data.jogador_atual_id ?? null,
-        vencedor_id: data.vencedor_id ?? null,
       });
     }
   }, []);
@@ -99,7 +97,7 @@ export default function Admin() {
       const gameId = data as string;
       const { data: jogoData, error: fetchError } = await gameSupabase
         .from("jogos")
-        .select("id, pin, status, jogador_atual_id, vencedor_id")
+      .select("id, pin, status, jogador_atual_id")
         .eq("id", gameId)
         .single();
 
@@ -109,7 +107,6 @@ export default function Admin() {
       setGame({
         ...jogoData,
         jogador_atual_id: jogoData.jogador_atual_id ?? null,
-        vencedor_id: jogoData.vencedor_id ?? null,
       });
       setPlayers([]);
     } catch (err) {
@@ -143,8 +140,8 @@ export default function Admin() {
   };
 
   const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
-  const winner = players.find((p) => p.id === game?.vencedor_id) ?? players.find((p) => p.posicao >= 42);
-  const isStarted = game?.status === "playing" || game?.status === "finished";
+  const winner = players.find((p) => p.posicao >= 42);
+  const isStarted = game?.status === "em_andamento" || game?.status === "finalizado";
 
   if (!game) {
     return (
@@ -186,14 +183,14 @@ export default function Admin() {
           <p className="text-muted-foreground font-body">Peça aos alunos para acessarem <span className="text-accent font-bold">/join</span> e digitarem este PIN</p>
         </div>
 
-        {game.status === "finished" && winner && (
+        {game.status === "finalizado" && winner && (
           <div className="p-6 rounded-xl bg-primary/10 border border-primary/30 text-center animate-bounce-in">
             <Trophy className="w-12 h-12 text-primary mx-auto mb-2" />
             <p className="text-primary font-display font-bold text-2xl">🏆 {winner.nickname} venceu o jogo!</p>
           </div>
         )}
 
-        {isStarted && currentPlayer && game.status !== "finished" && (
+        {isStarted && currentPlayer && game.status !== "finalizado" && (
           <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center space-y-2">
             <p className="text-accent font-display font-bold text-xl flex items-center justify-center gap-2">
               <Zap className="w-5 h-5" /> Vez de: {currentPlayer.nickname}
@@ -204,9 +201,9 @@ export default function Admin() {
 
         <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
 
-        <AdminPlayersPanel players={players} currentPlayerId={game.jogador_atual_id} gameFinished={game.status === "finished"} />
+        <AdminPlayersPanel players={players} currentPlayerId={game.jogador_atual_id} gameFinished={game.status === "finalizado"} />
 
-        {!game.status && (
+        {game.status === "aguardando" && (
           <div className="flex justify-center pt-4">
             <button
               onClick={handleStartGame}
