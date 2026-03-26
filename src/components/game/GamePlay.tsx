@@ -32,7 +32,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [players, setPlayers] = useState<PlayerState[]>([]);
   const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null);
   const [gameStatus, setGameStatus] = useState("em_andamento");
-  const [winnerId, setWinnerId] = useState<string | null>(null);
+  
   const [phase, setPhase] = useState<GamePhase>("waiting");
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [diceAnimating, setDiceAnimating] = useState(false);
