@@ -62,28 +62,67 @@ export default function Admin() {
     fetchGame(game.id);
     fetchPlayers(game.id);
 
-    const channel = gameSupabase
-      .channel(`admin-${game.id}`)
+    const playersChannel = gameSupabase
+      .channel(`admin-jogadores-${game.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
+        { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
         (payload) => {
-          console.log("[Admin] jogadores realtime:", payload);
+          console.log("[Admin] jogadores realtime INSERT:", payload);
           fetchPlayers(game.id);
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
+        (payload) => {
+          console.log("[Admin] jogadores realtime UPDATE:", payload);
+          fetchPlayers(game.id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
+        (payload) => {
+          console.log("[Admin] jogadores realtime DELETE:", payload);
+          fetchPlayers(game.id);
+        }
+      )
+      .subscribe((status) => {
+        console.log("[Admin] players subscription:", status);
+        if (status === "SUBSCRIBED") {
+          fetchPlayers(game.id);
+        }
+      });
+
+    const gameChannel = gameSupabase
+      .channel(`admin-jogo-${game.id}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${game.id}` },
         (payload) => {
           console.log("[Admin] jogo realtime:", payload);
           fetchGame(game.id);
+          fetchPlayers(game.id);
         }
       )
-      .subscribe((status) => console.log("[Admin] subscription:", status));
+      .subscribe((status) => {
+        console.log("[Admin] game subscription:", status);
+        if (status === "SUBSCRIBED") {
+          fetchGame(game.id);
+        }
+      });
+
+    const syncInterval = window.setInterval(() => {
+      console.log("[Admin] polling sync:", { gameId: game.id });
+      fetchGame(game.id);
+      fetchPlayers(game.id);
+    }, 2000);
 
     return () => {
-      gameSupabase.removeChannel(channel);
+      window.clearInterval(syncInterval);
+      gameSupabase.removeChannel(playersChannel);
+      gameSupabase.removeChannel(gameChannel);
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
