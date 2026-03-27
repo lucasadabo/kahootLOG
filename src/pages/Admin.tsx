@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Monitor, Play, Plus, Copy, Check, Trophy, Zap } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
+import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
 import { gameSupabase } from "@/lib/gameSupabase";
 
 interface Player {
@@ -67,32 +68,20 @@ export default function Admin() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
-        (payload) => {
-          console.log("[Admin] jogadores realtime INSERT:", payload);
-          fetchPlayers(game.id);
-        }
+        () => fetchPlayers(game.id)
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
-        (payload) => {
-          console.log("[Admin] jogadores realtime UPDATE:", payload);
-          fetchPlayers(game.id);
-        }
+        () => fetchPlayers(game.id)
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` },
-        (payload) => {
-          console.log("[Admin] jogadores realtime DELETE:", payload);
-          fetchPlayers(game.id);
-        }
+        () => fetchPlayers(game.id)
       )
       .subscribe((status) => {
-        console.log("[Admin] players subscription:", status);
-        if (status === "SUBSCRIBED") {
-          fetchPlayers(game.id);
-        }
+        if (status === "SUBSCRIBED") fetchPlayers(game.id);
       });
 
     const gameChannel = gameSupabase
@@ -100,21 +89,13 @@ export default function Admin() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${game.id}` },
-        (payload) => {
-          console.log("[Admin] jogo realtime:", payload);
-          fetchGame(game.id);
-          fetchPlayers(game.id);
-        }
+        () => { fetchGame(game.id); fetchPlayers(game.id); }
       )
       .subscribe((status) => {
-        console.log("[Admin] game subscription:", status);
-        if (status === "SUBSCRIBED") {
-          fetchGame(game.id);
-        }
+        if (status === "SUBSCRIBED") fetchGame(game.id);
       });
 
     const syncInterval = window.setInterval(() => {
-      console.log("[Admin] polling sync:", { gameId: game.id });
       fetchGame(game.id);
       fetchPlayers(game.id);
     }, 2000);
@@ -136,7 +117,7 @@ export default function Admin() {
       const gameId = data as string;
       const { data: jogoData, error: fetchError } = await gameSupabase
         .from("jogos")
-      .select("id, pin, status, jogador_atual_id")
+        .select("id, pin, status, jogador_atual_id")
         .eq("id", gameId)
         .single();
 
@@ -180,7 +161,7 @@ export default function Admin() {
 
   const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
   const winner = players.find((p) => p.posicao >= 42);
-  const isStarted = game?.status === "em_andamento" || game?.status === "finalizado";
+  const gameStatus = game?.status ?? "aguardando";
 
   if (!game) {
     return (
@@ -222,27 +203,33 @@ export default function Admin() {
           <p className="text-muted-foreground font-body">Peça aos alunos para acessarem <span className="text-accent font-bold">/join</span> e digitarem este PIN</p>
         </div>
 
-        {game.status === "finalizado" && winner && (
+        {gameStatus === "finalizado" && winner && (
           <div className="p-6 rounded-xl bg-primary/10 border border-primary/30 text-center animate-bounce-in">
             <Trophy className="w-12 h-12 text-primary mx-auto mb-2" />
             <p className="text-primary font-display font-bold text-2xl">🏆 {winner.nickname} venceu o jogo!</p>
           </div>
         )}
 
-        {isStarted && currentPlayer && game.status !== "finalizado" && (
+        {gameStatus === "em_andamento" && currentPlayer && (
           <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center space-y-2">
             <p className="text-accent font-display font-bold text-xl flex items-center justify-center gap-2">
               <Zap className="w-5 h-5" /> Vez de: {currentPlayer.nickname}
             </p>
-            <p className="text-sm text-muted-foreground font-body">Jogo iniciado</p>
+            <p className="text-sm text-muted-foreground font-body">Jogo em andamento</p>
           </div>
         )}
 
         <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
 
-        <AdminPlayersPanel players={players} currentPlayerId={game.jogador_atual_id} gameFinished={game.status === "finalizado"} />
+        <AdminPlayersPanel
+          players={players}
+          currentPlayerId={game.jogador_atual_id}
+          gameFinished={gameStatus === "finalizado"}
+          gameId={game.id}
+          onPlayerRemoved={() => fetchPlayers(game.id)}
+        />
 
-        {game.status === "aguardando" && (
+        {gameStatus === "aguardando" && (
           <div className="flex justify-center pt-4">
             <button
               onClick={handleStartGame}
@@ -254,6 +241,9 @@ export default function Admin() {
           </div>
         )}
       </div>
+
+      {/* Question overlay - shows when a player is answering */}
+      <AdminQuestionOverlay gameId={game.id} players={players} />
     </div>
   );
 }

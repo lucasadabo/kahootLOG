@@ -42,6 +42,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const rollTimeoutRef = useRef<number | null>(null);
+  const broadcastChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
 
   const isMyTurn = currentPlayerId === playerId;
 
@@ -75,6 +76,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   useEffect(() => {
     fetchGameState();
 
+    const broadcastChannel = gameSupabase.channel(`admin-broadcast-${gameId}`);
+    broadcastChannel.subscribe();
+    broadcastChannelRef.current = broadcastChannel;
+
     const channel = gameSupabase
       .channel(`gameplay-${gameId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` }, (payload) => {
@@ -90,12 +95,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
           setErrorMessage(null);
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, (payload) => {
-        console.log("[GamePlay] jogadores realtime:", payload);
+      .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, () => {
         fetchGameState();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "rodadas", filter: `jogo_id=eq.${gameId}` }, (payload) => {
-        console.log("[GamePlay] rodadas realtime:", payload);
       })
       .subscribe((status) => console.log("[GamePlay] subscription:", status));
 
@@ -104,6 +105,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         window.clearTimeout(rollTimeoutRef.current);
       }
       gameSupabase.removeChannel(channel);
+      gameSupabase.removeChannel(broadcastChannel);
     };
   }, [gameId, playerId, fetchGameState]);
 
@@ -139,17 +141,37 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
+    const perguntaObj = {
+      id: perguntaData.id,
+      texto: perguntaData.texto,
+      alternativa_a: perguntaData.alternativa_a,
+      alternativa_b: perguntaData.alternativa_b,
+      alternativa_c: perguntaData.alternativa_c,
+      alternativa_d: perguntaData.alternativa_d,
+      resposta_correta: perguntaData.resposta_correta,
+    };
+
     rollTimeoutRef.current = window.setTimeout(() => {
-      setPergunta({
-        id: perguntaData.id,
-        texto: perguntaData.texto,
-        alternativa_a: perguntaData.alternativa_a,
-        alternativa_b: perguntaData.alternativa_b,
-        alternativa_c: perguntaData.alternativa_c,
-        alternativa_d: perguntaData.alternativa_d,
-        resposta_correta: perguntaData.resposta_correta,
-      });
+      setPergunta(perguntaObj);
       setPhase("question");
+
+      // Broadcast question to admin (without resposta_correta)
+      broadcastChannelRef.current?.send({
+        type: "broadcast",
+        event: "question_started",
+        payload: {
+          playerId,
+          dado: rolledValue,
+          pergunta: {
+            id: perguntaObj.id,
+            texto: perguntaObj.texto,
+            alternativa_a: perguntaObj.alternativa_a,
+            alternativa_b: perguntaObj.alternativa_b,
+            alternativa_c: perguntaObj.alternativa_c,
+            alternativa_d: perguntaObj.alternativa_d,
+          },
+        },
+      });
     }, 1800);
   };
 
@@ -281,6 +303,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         ? `✅ Correto! Você saiu da casa ${rodadaCheck.posicao_antes} e foi para a ${rodadaCheck.posicao_depois}`
         : `❌ Errado! Você permaneceu na casa ${rodadaCheck.posicao_depois}`
     );
+
+    // Broadcast result to admin
+    broadcastChannelRef.current?.send({
+      type: "broadcast",
+      event: "question_answered",
+      payload: {
+        acertou,
+        posicao_antes: rodadaCheck.posicao_antes,
+        posicao_depois: rodadaCheck.posicao_depois,
+        evento: null,
+        dado: diceValue,
+        nickname,
+      },
+    });
 
     setEventMessage(null);
     if (gameAfter.status === "finalizado") {
