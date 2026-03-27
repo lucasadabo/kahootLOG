@@ -319,12 +319,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     });
 
     setEventMessage(null);
-    if (gameAfter.status === "finalizado") {
+    if (gameAfter.status === "finalizado" || gameAfter.status === "finished") {
       setGameStatus("finalizado");
     }
     setPhase("result");
 
-    if (gameAfter.status !== "finalizado") {
+    if (gameAfter.status !== "finalizado" && gameAfter.status !== "finished") {
       setTimeout(async () => {
         const { error: turnoError } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
         console.log("[GamePlay] proximo_turno RPC:", { turnoError });
@@ -338,7 +338,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const winner = players.find((p) => p.posicao >= 42);
   const myPlayer = players.find((p) => p.id === playerId);
 
-  if (gameStatus === "finalizado" && winner) {
+  if ((gameStatus === "finalizado" || gameStatus === "finished") && winner) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
         <div className="text-center space-y-6 animate-bounce-in">

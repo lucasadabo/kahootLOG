@@ -203,14 +203,14 @@ export default function Admin() {
           <p className="text-muted-foreground font-body">Peça aos alunos para acessarem <span className="text-accent font-bold">/join</span> e digitarem este PIN</p>
         </div>
 
-        {gameStatus === "finalizado" && winner && (
+        {(gameStatus === "finalizado" || gameStatus === "finished") && winner && (
           <div className="p-6 rounded-xl bg-primary/10 border border-primary/30 text-center animate-bounce-in">
             <Trophy className="w-12 h-12 text-primary mx-auto mb-2" />
             <p className="text-primary font-display font-bold text-2xl">🏆 {winner.nickname} venceu o jogo!</p>
           </div>
         )}
 
-        {gameStatus === "em_andamento" && currentPlayer && (
+        {(gameStatus === "em_andamento" || gameStatus === "playing") && currentPlayer && (
           <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-center space-y-2">
             <p className="text-accent font-display font-bold text-xl flex items-center justify-center gap-2">
               <Zap className="w-5 h-5" /> Vez de: {currentPlayer.nickname}
@@ -224,12 +224,12 @@ export default function Admin() {
         <AdminPlayersPanel
           players={players}
           currentPlayerId={game.jogador_atual_id}
-          gameFinished={gameStatus === "finalizado"}
+          gameFinished={gameStatus === "finalizado" || gameStatus === "finished"}
           gameId={game.id}
           onPlayerRemoved={() => fetchPlayers(game.id)}
         />
 
-        {gameStatus === "aguardando" && (
+        {(gameStatus === "aguardando" || gameStatus === "waiting") && (
           <div className="flex justify-center pt-4">
             <button
               onClick={handleStartGame}
