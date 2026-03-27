@@ -42,6 +42,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const rollTimeoutRef = useRef<number | null>(null);
+  const broadcastChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
 
   const isMyTurn = currentPlayerId === playerId;
 
