@@ -141,17 +141,37 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
+    const perguntaObj = {
+      id: perguntaData.id,
+      texto: perguntaData.texto,
+      alternativa_a: perguntaData.alternativa_a,
+      alternativa_b: perguntaData.alternativa_b,
+      alternativa_c: perguntaData.alternativa_c,
+      alternativa_d: perguntaData.alternativa_d,
+      resposta_correta: perguntaData.resposta_correta,
+    };
+
     rollTimeoutRef.current = window.setTimeout(() => {
-      setPergunta({
-        id: perguntaData.id,
-        texto: perguntaData.texto,
-        alternativa_a: perguntaData.alternativa_a,
-        alternativa_b: perguntaData.alternativa_b,
-        alternativa_c: perguntaData.alternativa_c,
-        alternativa_d: perguntaData.alternativa_d,
-        resposta_correta: perguntaData.resposta_correta,
-      });
+      setPergunta(perguntaObj);
       setPhase("question");
+
+      // Broadcast question to admin (without resposta_correta)
+      broadcastChannelRef.current?.send({
+        type: "broadcast",
+        event: "question_started",
+        payload: {
+          playerId,
+          dado: rolledValue,
+          pergunta: {
+            id: perguntaObj.id,
+            texto: perguntaObj.texto,
+            alternativa_a: perguntaObj.alternativa_a,
+            alternativa_b: perguntaObj.alternativa_b,
+            alternativa_c: perguntaObj.alternativa_c,
+            alternativa_d: perguntaObj.alternativa_d,
+          },
+        },
+      });
     }, 1800);
   };
 
