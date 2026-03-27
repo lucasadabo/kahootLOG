@@ -304,6 +304,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         : `❌ Errado! Você permaneceu na casa ${rodadaCheck.posicao_depois}`
     );
 
+    // Broadcast result to admin
+    broadcastChannelRef.current?.send({
+      type: "broadcast",
+      event: "question_answered",
+      payload: {
+        acertou,
+        posicao_antes: rodadaCheck.posicao_antes,
+        posicao_depois: rodadaCheck.posicao_depois,
+        evento: null,
+        dado: diceValue,
+        nickname,
+      },
+    });
+
     setEventMessage(null);
     if (gameAfter.status === "finalizado") {
       setGameStatus("finalizado");
