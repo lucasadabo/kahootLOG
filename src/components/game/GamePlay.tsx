@@ -76,6 +76,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   useEffect(() => {
     fetchGameState();
 
+    const broadcastChannel = gameSupabase.channel(`admin-broadcast-${gameId}`);
+    broadcastChannel.subscribe();
+    broadcastChannelRef.current = broadcastChannel;
+
     const channel = gameSupabase
       .channel(`gameplay-${gameId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` }, (payload) => {
@@ -91,12 +95,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
           setErrorMessage(null);
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, (payload) => {
-        console.log("[GamePlay] jogadores realtime:", payload);
+      .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, () => {
         fetchGameState();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "rodadas", filter: `jogo_id=eq.${gameId}` }, (payload) => {
-        console.log("[GamePlay] rodadas realtime:", payload);
       })
       .subscribe((status) => console.log("[GamePlay] subscription:", status));
 
@@ -105,6 +105,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         window.clearTimeout(rollTimeoutRef.current);
       }
       gameSupabase.removeChannel(channel);
+      gameSupabase.removeChannel(broadcastChannel);
     };
   }, [gameId, playerId, fetchGameState]);
 
