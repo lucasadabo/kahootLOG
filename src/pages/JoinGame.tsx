@@ -89,7 +89,7 @@ export default function JoinGame() {
     }
   };
 
-  if (gameId && playerId && (gameStatus === "em_andamento" || gameStatus === "finalizado")) {
+  if (gameId && playerId && (gameStatus === "em_andamento" || gameStatus === "playing" || gameStatus === "finalizado" || gameStatus === "finished")) {
     return <GamePlay gameId={gameId} playerId={playerId} nickname={nickname} />;
   }
 
