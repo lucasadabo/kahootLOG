@@ -123,16 +123,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    // Use data directly from the RPC (it returns id, texto, alternativa_a-d)
+    // RPC returns: id, pergunta, alternativa_a-d, correta, categoria, dificuldade
     const rpcData = data as Record<string, string>;
     const perguntaObj: Pergunta = {
       id: String(rpcData.id),
-      texto: String(rpcData.texto),
+      texto: String(rpcData.pergunta),
       alternativa_a: String(rpcData.alternativa_a),
       alternativa_b: String(rpcData.alternativa_b),
       alternativa_c: String(rpcData.alternativa_c),
       alternativa_d: String(rpcData.alternativa_d),
-      resposta_correta: "", // Will be fetched server-side when answering
+      resposta_correta: String(rpcData.correta),
     };
 
     console.log("[GamePlay] pergunta from RPC:", perguntaObj);
