@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { gameSupabase } from "@/lib/gameSupabase";
 import { Users, Loader2 } from "lucide-react";
 
