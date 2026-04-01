@@ -123,16 +123,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    // Use data directly from the RPC (it returns id, texto, alternativa_a-d)
+    // RPC returns: id, pergunta, alternativa_a-d, correta, categoria, dificuldade
     const rpcData = data as Record<string, string>;
     const perguntaObj: Pergunta = {
       id: String(rpcData.id),
-      texto: String(rpcData.texto),
+      texto: String(rpcData.pergunta),
       alternativa_a: String(rpcData.alternativa_a),
       alternativa_b: String(rpcData.alternativa_b),
       alternativa_c: String(rpcData.alternativa_c),
       alternativa_d: String(rpcData.alternativa_d),
-      resposta_correta: "", // Will be fetched server-side when answering
+      resposta_correta: String(rpcData.correta),
     };
 
     console.log("[GamePlay] pergunta from RPC:", perguntaObj);
@@ -208,19 +208,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const { data: fullPergunta, error: fullPerguntaError } = await gameSupabase
       .from("perguntas")
-      .select("id, resposta_correta")
+      .select("id, correta")
       .eq("id", pergunta.id)
       .maybeSingle();
 
     console.log("[GamePlay] resposta correta SELECT:", { fullPergunta, fullPerguntaError });
 
     if (fullPerguntaError || !fullPergunta) {
-      setErrorMessage("Não foi possível validar a resposta com a pergunta salva no banco.");
-      return;
+      // Fallback: use the answer we already have from the RPC
+      console.warn("[GamePlay] Could not re-fetch from DB, using RPC data");
     }
 
-    const acertou = fullPergunta.resposta_correta.toUpperCase() === answer.toUpperCase();
-    console.log("[GamePlay] resposta:", { answer, correta: fullPergunta.resposta_correta, acertou });
+    const respostaCorreta = (fullPergunta as any)?.correta || pergunta.resposta_correta;
+    const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
+    console.log("[GamePlay] resposta:", { answer, correta: respostaCorreta, acertou });
 
     const { error: jogarError } = await gameSupabase.rpc("jogar", {
       p_jogo_id: gameId,
