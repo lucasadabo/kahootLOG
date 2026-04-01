@@ -208,19 +208,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const { data: fullPergunta, error: fullPerguntaError } = await gameSupabase
       .from("perguntas")
-      .select("id, resposta_correta")
+      .select("id, correta")
       .eq("id", pergunta.id)
       .maybeSingle();
 
     console.log("[GamePlay] resposta correta SELECT:", { fullPergunta, fullPerguntaError });
 
     if (fullPerguntaError || !fullPergunta) {
-      setErrorMessage("Não foi possível validar a resposta com a pergunta salva no banco.");
-      return;
+      // Fallback: use the answer we already have from the RPC
+      console.warn("[GamePlay] Could not re-fetch from DB, using RPC data");
     }
 
-    const acertou = fullPergunta.resposta_correta.toUpperCase() === answer.toUpperCase();
-    console.log("[GamePlay] resposta:", { answer, correta: fullPergunta.resposta_correta, acertou });
+    const respostaCorreta = (fullPergunta as any)?.correta || pergunta.resposta_correta;
+    const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
+    console.log("[GamePlay] resposta:", { answer, correta: respostaCorreta, acertou });
 
     const { error: jogarError } = await gameSupabase.rpc("jogar", {
       p_jogo_id: gameId,
