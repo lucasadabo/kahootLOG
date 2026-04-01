@@ -210,7 +210,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       .from("perguntas")
       .select("id, resposta_correta")
       .eq("id", pergunta.id)
-      .single();
+      .maybeSingle();
 
     console.log("[GamePlay] resposta correta SELECT:", { fullPergunta, fullPerguntaError });
 
