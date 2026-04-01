@@ -17,6 +17,9 @@ interface WaitingLobbyProps {
 export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProps) {
   const [players, setPlayers] = useState<Player[]>([]);
 
+  const onGameStartRef = useRef(onGameStart);
+  onGameStartRef.current = onGameStart;
+
   useEffect(() => {
     const fetchPlayers = async () => {
       const { data, error } = await gameSupabase
@@ -39,7 +42,8 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
       console.log("[WaitingLobby] jogo SELECT:", { data, error });
 
       if (!error && (data?.status === "em_andamento" || data?.status === "playing" || data?.status === "finalizado" || data?.status === "finished")) {
-        onGameStart();
+        console.log("[WaitingLobby] Game started! Transitioning...");
+        onGameStartRef.current();
       }
     };
 
@@ -70,11 +74,18 @@ export function WaitingLobby({ gameId, nickname, onGameStart }: WaitingLobbyProp
       )
       .subscribe((status) => console.log("[WaitingLobby] game subscription:", status));
 
+    // Polling fallback every 2s
+    const pollInterval = window.setInterval(() => {
+      fetchGame();
+      fetchPlayers();
+    }, 2000);
+
     return () => {
+      window.clearInterval(pollInterval);
       gameSupabase.removeChannel(playersChannel);
       gameSupabase.removeChannel(gameChannel);
     };
-  }, [gameId, onGameStart]);
+  }, [gameId]);
 
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-8">
