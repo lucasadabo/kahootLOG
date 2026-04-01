@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { gameSupabase } from "@/lib/gameSupabase";
 import { JoinForm } from "@/components/game/JoinForm";
 import { WaitingLobby } from "@/components/game/WaitingLobby";
@@ -14,13 +14,41 @@ function generateRandomColor(): string {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+function isGameStarted(status: string) {
+  return status === "em_andamento" || status === "playing" || status === "finalizado" || status === "finished";
+}
+
 export default function JoinGame() {
   const [gameId, setGameId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
-  const [gameStatus, setGameStatus] = useState<string>("aguardando");
+  const [gameStarted, setGameStarted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Poll game status directly in JoinGame once we have a gameId
+  useEffect(() => {
+    if (!gameId || gameStarted) return;
+
+    const checkStatus = async () => {
+      const { data, error } = await gameSupabase
+        .from("jogos")
+        .select("status")
+        .eq("id", gameId)
+        .single();
+
+      console.log("[JoinGame] poll status:", { data, error });
+
+      if (!error && data && isGameStarted(data.status)) {
+        console.log("[JoinGame] Game started! Transitioning to GamePlay...");
+        setGameStarted(true);
+      }
+    };
+
+    checkStatus();
+    const interval = window.setInterval(checkStatus, 1500);
+    return () => window.clearInterval(interval);
+  }, [gameId, gameStarted]);
 
   const handleJoin = async (pin: string, nick: string) => {
     setError("");
@@ -63,24 +91,13 @@ export default function JoinGame() {
         return;
       }
 
-      const { data: insertedPlayer, error: insertedPlayerError } = await gameSupabase
-        .from("jogadores")
-        .select("id, jogo_id, nickname, cor_empilhadeira, posicao")
-        .eq("id", insertData.id)
-        .single();
-
-      console.log("[JoinGame] jogador validation SELECT:", { insertedPlayer, insertedPlayerError });
-
-      if (insertedPlayerError || !insertedPlayer) {
-        console.error("[JoinGame] jogador validation ERROR:", insertedPlayerError);
-        setError("Erro ao confirmar sua entrada no banco. Tente novamente.");
-        return;
-      }
-
       setGameId(jogo.id);
-      setPlayerId(insertedPlayer.id);
-      setNickname(insertedPlayer.nickname);
-      setGameStatus(jogo.status ?? "aguardando");
+      setPlayerId(insertData.id);
+      setNickname(nick.trim());
+
+      if (isGameStarted(jogo.status)) {
+        setGameStarted(true);
+      }
     } catch (err) {
       console.error("[JoinGame] Error:", err);
       setError("Erro inesperado. Tente novamente.");
@@ -89,7 +106,7 @@ export default function JoinGame() {
     }
   };
 
-  if (gameId && playerId && (gameStatus === "em_andamento" || gameStatus === "playing" || gameStatus === "finalizado" || gameStatus === "finished")) {
+  if (gameId && playerId && gameStarted) {
     return <GamePlay gameId={gameId} playerId={playerId} nickname={nickname} />;
   }
 
@@ -98,7 +115,7 @@ export default function JoinGame() {
       <WaitingLobby
         gameId={gameId}
         nickname={nickname}
-        onGameStart={() => setGameStatus("em_andamento")}
+        onGameStart={() => setGameStarted(true)}
       />
     );
   }
