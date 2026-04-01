@@ -115,7 +115,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     if (error || !data || typeof data !== "object" || !("id" in data)) {
       console.error("[GamePlay] pegar_pergunta ERROR:", error, data);
-      setErrorMessage("Não foi possível carregar uma pergunta real do banco.");
+      setErrorMessage("Não foi possível carregar uma pergunta do banco.");
       setDiceValue(rolledValue);
       rollTimeoutRef.current = window.setTimeout(() => {
         setPhase("waiting");
@@ -123,39 +123,24 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    const questionId = String((data as { id: string }).id);
-    const { data: perguntaData, error: perguntaError } = await gameSupabase
-      .from("perguntas")
-      .select("id, texto, alternativa_a, alternativa_b, alternativa_c, alternativa_d, resposta_correta")
-      .eq("id", questionId)
-      .single();
-
-    console.log("[GamePlay] pergunta SELECT:", { perguntaData, perguntaError });
-
-    if (perguntaError || !perguntaData) {
-      console.error("[GamePlay] pergunta SELECT ERROR:", perguntaError);
-      setErrorMessage("A pergunta retornada não foi encontrada no banco.");
-      rollTimeoutRef.current = window.setTimeout(() => {
-        setPhase("waiting");
-      }, 1800);
-      return;
-    }
-
-    const perguntaObj = {
-      id: perguntaData.id,
-      texto: perguntaData.texto,
-      alternativa_a: perguntaData.alternativa_a,
-      alternativa_b: perguntaData.alternativa_b,
-      alternativa_c: perguntaData.alternativa_c,
-      alternativa_d: perguntaData.alternativa_d,
-      resposta_correta: perguntaData.resposta_correta,
+    // Use data directly from the RPC (it returns id, texto, alternativa_a-d)
+    const rpcData = data as Record<string, string>;
+    const perguntaObj: Pergunta = {
+      id: String(rpcData.id),
+      texto: String(rpcData.texto),
+      alternativa_a: String(rpcData.alternativa_a),
+      alternativa_b: String(rpcData.alternativa_b),
+      alternativa_c: String(rpcData.alternativa_c),
+      alternativa_d: String(rpcData.alternativa_d),
+      resposta_correta: "", // Will be fetched server-side when answering
     };
+
+    console.log("[GamePlay] pergunta from RPC:", perguntaObj);
 
     rollTimeoutRef.current = window.setTimeout(() => {
       setPergunta(perguntaObj);
       setPhase("question");
 
-      // Broadcast question to admin (without resposta_correta)
       broadcastChannelRef.current?.send({
         type: "broadcast",
         event: "question_started",
