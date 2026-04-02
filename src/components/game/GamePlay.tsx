@@ -193,6 +193,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setSelectedAnswer(answer);
     setErrorMessage(null);
 
+    // 1. Get current position
     const { data: playerBefore, error: playerBeforeError } = await gameSupabase
       .from("jogadores")
       .select("posicao")
@@ -202,93 +203,86 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     console.log("[GamePlay] posição antes SELECT:", { playerBefore, playerBeforeError });
 
     if (playerBeforeError || !playerBefore) {
-      setErrorMessage("Não foi possível confirmar a posição atual no banco.");
+      setErrorMessage("Não foi possível confirmar a posição atual.");
       return;
     }
 
-    const { data: fullPergunta, error: fullPerguntaError } = await gameSupabase
-      .from("perguntas")
-      .select("id, correta")
-      .eq("id", pergunta.id)
-      .maybeSingle();
+    const posicaoAntes = playerBefore.posicao;
 
-    console.log("[GamePlay] resposta correta SELECT:", { fullPergunta, fullPerguntaError });
-
-    if (fullPerguntaError || !fullPergunta) {
-      // Fallback: use the answer we already have from the RPC
-      console.warn("[GamePlay] Could not re-fetch from DB, using RPC data");
-    }
-
-    const respostaCorreta = (fullPergunta as any)?.correta || pergunta.resposta_correta;
+    // 2. Check answer using RPC data (already has correta from pegar_pergunta)
+    const respostaCorreta = pergunta.resposta_correta;
     const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
     console.log("[GamePlay] resposta:", { answer, correta: respostaCorreta, acertou });
 
-    const { error: jogarError } = await gameSupabase.rpc("jogar", {
-      p_jogo_id: gameId,
-      p_jogador_id: playerId,
-      p_dado: diceValue,
-      p_acertou: acertou,
-      p_pergunta_id: pergunta.id,
-    });
+    // 3. Calculate new position client-side
+    let novaPosicao = acertou ? posicaoAntes + diceValue : posicaoAntes;
+    let evento: string | null = null;
 
-    console.log("[GamePlay] jogar RPC:", { jogarError });
+    if (acertou) {
+      if (novaPosicao === 10) {
+        novaPosicao -= 2;
+        evento = "Casa 10: Volte 2 casas!";
+      } else if (novaPosicao === 20) {
+        novaPosicao += 1;
+        evento = "Casa 20: Avance +1 casa!";
+      } else if (novaPosicao === 30) {
+        await gameSupabase.from("jogadores").update({ pular_vez: true }).eq("id", playerId);
+        evento = "Casa 30: Perde a próxima vez!";
+      } else if (novaPosicao === 40) {
+        novaPosicao -= 2;
+        evento = "Casa 40: Volte 2 casas!";
+      }
 
-    if (jogarError) {
-      console.error("[GamePlay] jogar ERROR:", jogarError);
-      setResultMessage("❌ Erro ao processar jogada. Tente novamente.");
+      if (novaPosicao >= 42) {
+        novaPosicao = 42;
+      }
+    }
+
+    // 4. Update player position
+    const { error: updateError } = await gameSupabase
+      .from("jogadores")
+      .update({ posicao: novaPosicao })
+      .eq("id", playerId);
+
+    console.log("[GamePlay] jogadores UPDATE:", { updateError, novaPosicao });
+
+    if (updateError) {
+      console.error("[GamePlay] jogadores UPDATE ERROR:", updateError);
+      setResultMessage("❌ Erro ao atualizar posição. Tente novamente.");
       setPhase("result");
       return;
     }
 
-    const { data: rodadaCheck, error: rodadaCheckError } = await gameSupabase
+    // 5. Insert rodada record
+    const { error: rodadaError } = await gameSupabase
       .from("rodadas")
-      .select("id, jogo_id, jogador_id, pergunta_id, dado, acertou, posicao_antes, posicao_depois")
-      .eq("jogo_id", gameId)
-      .eq("jogador_id", playerId)
-      .eq("pergunta_id", pergunta.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .insert({
+        jogo_id: gameId,
+        jogador_id: playerId,
+        pergunta_id: pergunta.id,
+        dado: diceValue,
+        acertou,
+        posicao_antes: posicaoAntes,
+        posicao_depois: novaPosicao,
+        evento,
+      });
 
-    console.log("[GamePlay] rodada validation SELECT:", { rodadaCheck, rodadaCheckError });
+    console.log("[GamePlay] rodadas INSERT:", { rodadaError });
 
-    if (rodadaCheckError || !rodadaCheck) {
-      console.error("[GamePlay] rodada validation ERROR:", rodadaCheckError);
-      setErrorMessage("A rodada não foi encontrada no banco após a jogada.");
-      return;
+    // 6. Check win condition
+    const venceu = novaPosicao >= 42;
+    if (venceu) {
+      await gameSupabase.from("jogos").update({ status: "finalizado" }).eq("id", gameId);
     }
 
-    const { data: playerAfter, error: playerAfterError } = await gameSupabase
-      .from("jogadores")
-      .select("posicao")
-      .eq("id", playerId)
-      .single();
-
-    console.log("[GamePlay] posição depois SELECT:", { playerAfter, playerAfterError });
-
-    if (playerAfterError || !playerAfter) {
-      setErrorMessage("A nova posição do jogador não foi confirmada no banco.");
-      return;
-    }
-
-    const { data: gameAfter, error: gameAfterError } = await gameSupabase
-      .from("jogos")
-      .select("status, jogador_atual_id")
-      .eq("id", gameId)
-      .single();
-
-    console.log("[GamePlay] jogo depois SELECT:", { gameAfter, gameAfterError });
-
-    if (gameAfterError || !gameAfter) {
-      setErrorMessage("O estado do jogo não foi confirmado após a jogada.");
-      return;
-    }
-
+    // 7. Show result
     setResultMessage(
       acertou
-        ? `✅ Correto! Você saiu da casa ${rodadaCheck.posicao_antes} e foi para a ${rodadaCheck.posicao_depois}`
-        : `❌ Errado! Você permaneceu na casa ${rodadaCheck.posicao_depois}`
+        ? `✅ Correto! Você saiu da casa ${posicaoAntes} e foi para a ${novaPosicao}`
+        : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
     );
+
+    setEventMessage(evento);
 
     // Broadcast result to admin
     broadcastChannelRef.current?.send({
@@ -296,24 +290,57 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       event: "question_answered",
       payload: {
         acertou,
-        posicao_antes: rodadaCheck.posicao_antes,
-        posicao_depois: rodadaCheck.posicao_depois,
-        evento: null,
+        posicao_antes: posicaoAntes,
+        posicao_depois: novaPosicao,
+        evento,
         dado: diceValue,
         nickname,
       },
     });
 
-    setEventMessage(null);
-    if (gameAfter.status === "finalizado" || gameAfter.status === "finished") {
+    if (venceu) {
       setGameStatus("finalizado");
     }
     setPhase("result");
 
-    if (gameAfter.status !== "finalizado" && gameAfter.status !== "finished") {
+    // 8. Pass turn to next player after delay
+    if (!venceu) {
       setTimeout(async () => {
+        // Try RPC first, fallback to manual
         const { error: turnoError } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
         console.log("[GamePlay] proximo_turno RPC:", { turnoError });
+
+        if (turnoError) {
+          console.warn("[GamePlay] proximo_turno failed, doing manual turn pass");
+          // Manual: get all players ordered, find next
+          const { data: allPlayers } = await gameSupabase
+            .from("jogadores")
+            .select("id, pular_vez")
+            .eq("jogo_id", gameId)
+            .order("created_at", { ascending: true });
+
+          if (allPlayers && allPlayers.length > 0) {
+            const currentIdx = allPlayers.findIndex((p) => p.id === playerId);
+            let nextIdx = (currentIdx + 1) % allPlayers.length;
+            let attempts = 0;
+
+            while (attempts < allPlayers.length) {
+              const candidate = allPlayers[nextIdx];
+              if (candidate.pular_vez) {
+                await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", candidate.id);
+                nextIdx = (nextIdx + 1) % allPlayers.length;
+                attempts++;
+              } else {
+                break;
+              }
+            }
+
+            await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", gameId);
+            console.log("[GamePlay] manual turn pass to:", allPlayers[nextIdx].id);
+          }
+        }
+
+        fetchGameState();
       }, 3000);
     }
 
