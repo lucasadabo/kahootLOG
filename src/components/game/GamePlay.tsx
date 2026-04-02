@@ -43,8 +43,34 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const rollTimeoutRef = useRef<number | null>(null);
   const broadcastChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
+  const prevCurrentPlayerRef = useRef<string | null>(null);
 
   const isMyTurn = currentPlayerId === playerId;
+
+  // Reset phase when turn changes away from me or to me
+  useEffect(() => {
+    if (prevCurrentPlayerRef.current !== currentPlayerId && currentPlayerId !== null) {
+      if (currentPlayerId === playerId) {
+        // It's now my turn — reset to waiting
+        setPhase("waiting");
+        setDiceValue(null);
+        setPergunta(null);
+        setSelectedAnswer(null);
+        setEventMessage(null);
+        setErrorMessage(null);
+        setResultMessage("");
+      } else if (phase === "result") {
+        // It's someone else's turn and I was showing result — go back to idle
+        setPhase("waiting");
+        setDiceValue(null);
+        setPergunta(null);
+        setSelectedAnswer(null);
+        setResultMessage("");
+        setEventMessage(null);
+      }
+    }
+    prevCurrentPlayerRef.current = currentPlayerId;
+  }, [currentPlayerId, playerId, phase]);
 
   const fetchGameState = useCallback(async () => {
     const { data: jogoData, error: jogoError } = await gameSupabase
