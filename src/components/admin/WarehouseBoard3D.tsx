@@ -10,6 +10,18 @@ interface Player {
   posicao: number;
 }
 
+// Unique intense colors for up to 8 players
+const FORKLIFT_COLORS = [
+  "#ef4444", // red
+  "#3b82f6", // blue
+  "#22c55e", // green
+  "#f59e0b", // amber
+  "#a855f7", // purple
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#e11d48", // rose
+];
+
 interface WarehouseBoard3DProps {
   players: Player[];
   currentPlayerId: string | null;
