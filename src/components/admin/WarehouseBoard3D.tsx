@@ -233,15 +233,20 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
       })}
 
       {Array.from(playersByPosition.entries()).flatMap(([position, positionPlayers]) =>
-        positionPlayers.map((player, index) => (
-          <ForkliftPawn
-            key={player.id}
-            color={player.cor_empilhadeira}
-            label={player.nickname.slice(0, 1).toUpperCase()}
-            active={player.id === currentPlayerId}
-            position={getForkliftPosition(position, index)}
-          />
-        )),
+        positionPlayers.map((player, index) => {
+          // Use ordered index from full players array for unique color
+          const playerGlobalIndex = players.findIndex(p => p.id === player.id);
+          const color = FORKLIFT_COLORS[playerGlobalIndex % FORKLIFT_COLORS.length];
+          return (
+            <ForkliftPawn
+              key={player.id}
+              color={color}
+              label={player.nickname.slice(0, 1).toUpperCase()}
+              active={player.id === currentPlayerId}
+              position={getForkliftPosition(position, index, positionPlayers.length)}
+            />
+          );
+        }),
       )}
 
       <OrbitControls enablePan={false} minDistance={12} maxDistance={20} minPolarAngle={0.8} maxPolarAngle={1.35} />
