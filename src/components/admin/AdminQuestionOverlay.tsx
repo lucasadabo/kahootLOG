@@ -55,11 +55,6 @@ export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: Admin
       .on("broadcast", { event: "question_answered" }, (payload) => {
         const msg = payload.payload as RoundResult;
         setRoundResult(msg);
-        setTimeout(() => {
-          setVisible(false);
-          setCurrentQuestion(null);
-          setRoundResult(null);
-        }, 4000);
       })
       .subscribe();
 

@@ -407,7 +407,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
                 <p className="font-display font-bold text-secondary">⚡ {eventMessage}</p>
               </div>
             )}
-            <p className="text-center text-muted-foreground font-body text-sm animate-pulse-slow">Próximo turno em instantes...</p>
+            <p className="text-center text-muted-foreground font-body text-sm animate-pulse-slow">Aguardando o professor avançar...</p>
           </div>
         )}
 
