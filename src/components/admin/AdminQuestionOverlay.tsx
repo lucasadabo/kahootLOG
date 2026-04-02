@@ -26,7 +26,7 @@ interface AdminQuestionOverlayProps {
   onRoundFinished?: () => void;
 }
 
-export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayProps) {
+export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: AdminQuestionOverlayProps) {
   const [currentQuestion, setCurrentQuestion] = useState<Pergunta | null>(null);
   const [currentPlayerName, setCurrentPlayerName] = useState<string>("");
   const [diceValue, setDiceValue] = useState<number | null>(null);
