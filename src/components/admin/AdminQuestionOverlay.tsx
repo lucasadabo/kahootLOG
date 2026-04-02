@@ -23,6 +23,7 @@ interface RoundResult {
 interface AdminQuestionOverlayProps {
   gameId: string;
   players: { id: string; nickname: string }[];
+  onRoundFinished?: () => void;
 }
 
 export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayProps) {
