@@ -83,9 +83,9 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
         <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.8} />
       </mesh>}
 
-      <mesh castShadow receiveShadow position={[0, 0.32, 0]}>
-        <boxGeometry args={[0.72, 0.34, 0.54]} />
-        <meshStandardMaterial color={color} metalness={0.55} roughness={0.35} />
+      <mesh castShadow receiveShadow position={[0, 0.38, 0]}>
+        <boxGeometry args={[0.9, 0.42, 0.65]} />
+        <meshStandardMaterial color={color} metalness={0.55} roughness={0.35} emissive={color} emissiveIntensity={0.15} />
       </mesh>
 
       <mesh castShadow receiveShadow position={[0.06, 0.62, 0]}>
