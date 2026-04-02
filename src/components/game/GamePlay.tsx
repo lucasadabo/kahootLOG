@@ -302,48 +302,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       setGameStatus("finalizado");
     }
     setPhase("result");
-
-    // 8. Pass turn to next player after delay
-    if (!venceu) {
-      setTimeout(async () => {
-        // Try RPC first, fallback to manual
-        const { error: turnoError } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
-        console.log("[GamePlay] proximo_turno RPC:", { turnoError });
-
-        if (turnoError) {
-          console.warn("[GamePlay] proximo_turno failed, doing manual turn pass");
-          // Manual: get all players ordered, find next
-          const { data: allPlayers } = await gameSupabase
-            .from("jogadores")
-            .select("id, pular_vez")
-            .eq("jogo_id", gameId)
-            .order("created_at", { ascending: true });
-
-          if (allPlayers && allPlayers.length > 0) {
-            const currentIdx = allPlayers.findIndex((p) => p.id === playerId);
-            let nextIdx = (currentIdx + 1) % allPlayers.length;
-            let attempts = 0;
-
-            while (attempts < allPlayers.length) {
-              const candidate = allPlayers[nextIdx];
-              if (candidate.pular_vez) {
-                await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", candidate.id);
-                nextIdx = (nextIdx + 1) % allPlayers.length;
-                attempts++;
-              } else {
-                break;
-              }
-            }
-
-            await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", gameId);
-            console.log("[GamePlay] manual turn pass to:", allPlayers[nextIdx].id);
-          }
-        }
-
-        fetchGameState();
-      }, 3000);
-    }
-
     fetchGameState();
   };
 
