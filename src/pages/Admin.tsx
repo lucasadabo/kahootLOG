@@ -243,7 +243,37 @@ export default function Admin() {
       </div>
 
       {/* Question overlay - shows when a player is answering */}
-      <AdminQuestionOverlay gameId={game.id} players={players} />
+      <AdminQuestionOverlay
+        gameId={game.id}
+        players={players}
+        onRoundFinished={async () => {
+          const { error } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: game.id });
+          console.log("[Admin] proximo_turno RPC:", { error });
+          if (error) {
+            // Manual fallback
+            const { data: allPlayers } = await gameSupabase
+              .from("jogadores")
+              .select("id, pular_vez")
+              .eq("jogo_id", game.id)
+              .order("created_at", { ascending: true });
+            if (allPlayers && allPlayers.length > 0) {
+              const currentIdx = allPlayers.findIndex((p) => p.id === game.jogador_atual_id);
+              let nextIdx = (currentIdx + 1) % allPlayers.length;
+              let attempts = 0;
+              while (attempts < allPlayers.length) {
+                if (allPlayers[nextIdx].pular_vez) {
+                  await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", allPlayers[nextIdx].id);
+                  nextIdx = (nextIdx + 1) % allPlayers.length;
+                  attempts++;
+                } else break;
+              }
+              await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", game.id);
+            }
+          }
+          fetchGame(game.id);
+          fetchPlayers(game.id);
+        }}
+      />
     </div>
   );
 }

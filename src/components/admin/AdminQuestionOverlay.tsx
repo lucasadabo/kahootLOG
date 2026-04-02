@@ -147,6 +147,17 @@ export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: Admin
               {roundResult.evento && (
                 <p className="text-accent font-display font-bold mt-2">⚡ {roundResult.evento}</p>
               )}
+              <button
+                onClick={() => {
+                  onRoundFinished?.();
+                  setVisible(false);
+                  setCurrentQuestion(null);
+                  setRoundResult(null);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-display font-bold text-lg hover:scale-[1.03] active:scale-[0.97] transition-all shadow-[var(--shadow-glow)]"
+              >
+                ▶ Próxima Pergunta
+              </button>
             </div>
           )}
         </div>
