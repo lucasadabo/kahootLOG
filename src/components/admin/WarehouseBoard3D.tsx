@@ -10,6 +10,18 @@ interface Player {
   posicao: number;
 }
 
+// Unique intense colors for up to 8 players
+const FORKLIFT_COLORS = [
+  "#ef4444", // red
+  "#3b82f6", // blue
+  "#22c55e", // green
+  "#f59e0b", // amber
+  "#a855f7", // purple
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#e11d48", // rose
+];
+
 interface WarehouseBoard3DProps {
   players: Player[];
   currentPlayerId: string | null;
@@ -33,14 +45,18 @@ function getCellPosition(index: number) {
   );
 }
 
-function getForkliftPosition(position: number, stackIndex: number) {
+function getForkliftPosition(position: number, stackIndex: number, totalAtPosition: number) {
   if (position <= 0) {
-    return new THREE.Vector3(-7.4 + stackIndex * 0.8, 0.25, 5.5);
+    // Spread out at entrance area — more space between forklifts
+    const spacing = 1.4;
+    const totalWidth = (totalAtPosition - 1) * spacing;
+    const startX = -7.4 - totalWidth / 2;
+    return new THREE.Vector3(startX + stackIndex * spacing, 0.25, 5.5);
   }
 
   const base = getCellPosition(Math.min(position, CELL_COUNT) - 1);
-  const offsetX = (stackIndex % 2) * 0.42 - 0.21;
-  const offsetZ = Math.floor(stackIndex / 2) * 0.42 - 0.21;
+  const offsetX = (stackIndex % 2) * 0.5 - 0.25;
+  const offsetZ = Math.floor(stackIndex / 2) * 0.5 - 0.25;
 
   return new THREE.Vector3(base.x + offsetX, 0.25, base.z + offsetZ);
 }
@@ -67,9 +83,9 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
         <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.8} />
       </mesh>}
 
-      <mesh castShadow receiveShadow position={[0, 0.32, 0]}>
-        <boxGeometry args={[0.72, 0.34, 0.54]} />
-        <meshStandardMaterial color={color} metalness={0.55} roughness={0.35} />
+      <mesh castShadow receiveShadow position={[0, 0.38, 0]}>
+        <boxGeometry args={[0.9, 0.42, 0.65]} />
+        <meshStandardMaterial color={color} metalness={0.55} roughness={0.35} emissive={color} emissiveIntensity={0.15} />
       </mesh>
 
       <mesh castShadow receiveShadow position={[0.06, 0.62, 0]}>
@@ -217,15 +233,20 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
       })}
 
       {Array.from(playersByPosition.entries()).flatMap(([position, positionPlayers]) =>
-        positionPlayers.map((player, index) => (
-          <ForkliftPawn
-            key={player.id}
-            color={player.cor_empilhadeira}
-            label={player.nickname.slice(0, 1).toUpperCase()}
-            active={player.id === currentPlayerId}
-            position={getForkliftPosition(position, index)}
-          />
-        )),
+        positionPlayers.map((player, index) => {
+          // Use ordered index from full players array for unique color
+          const playerGlobalIndex = players.findIndex(p => p.id === player.id);
+          const color = FORKLIFT_COLORS[playerGlobalIndex % FORKLIFT_COLORS.length];
+          return (
+            <ForkliftPawn
+              key={player.id}
+              color={color}
+              label={player.nickname.slice(0, 1).toUpperCase()}
+              active={player.id === currentPlayerId}
+              position={getForkliftPosition(position, index, positionPlayers.length)}
+            />
+          );
+        }),
       )}
 
       <OrbitControls enablePan={false} minDistance={12} maxDistance={20} minPolarAngle={0.8} maxPolarAngle={1.35} />

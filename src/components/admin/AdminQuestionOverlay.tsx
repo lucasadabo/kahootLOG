@@ -23,9 +23,10 @@ interface RoundResult {
 interface AdminQuestionOverlayProps {
   gameId: string;
   players: { id: string; nickname: string }[];
+  onRoundFinished?: () => void;
 }
 
-export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayProps) {
+export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: AdminQuestionOverlayProps) {
   const [currentQuestion, setCurrentQuestion] = useState<Pergunta | null>(null);
   const [currentPlayerName, setCurrentPlayerName] = useState<string>("");
   const [diceValue, setDiceValue] = useState<number | null>(null);
@@ -54,11 +55,6 @@ export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayPr
       .on("broadcast", { event: "question_answered" }, (payload) => {
         const msg = payload.payload as RoundResult;
         setRoundResult(msg);
-        setTimeout(() => {
-          setVisible(false);
-          setCurrentQuestion(null);
-          setRoundResult(null);
-        }, 4000);
       })
       .subscribe();
 
@@ -151,6 +147,17 @@ export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayPr
               {roundResult.evento && (
                 <p className="text-accent font-display font-bold mt-2">⚡ {roundResult.evento}</p>
               )}
+              <button
+                onClick={() => {
+                  onRoundFinished?.();
+                  setVisible(false);
+                  setCurrentQuestion(null);
+                  setRoundResult(null);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-display font-bold text-lg hover:scale-[1.03] active:scale-[0.97] transition-all shadow-[var(--shadow-glow)]"
+              >
+                ▶ Próxima Pergunta
+              </button>
             </div>
           )}
         </div>
