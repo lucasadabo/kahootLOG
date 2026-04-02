@@ -47,16 +47,17 @@ function getCellPosition(index: number) {
 
 function getForkliftPosition(position: number, stackIndex: number, totalAtPosition: number) {
   if (position <= 0) {
-    // Spread out at entrance area — more space between forklifts
-    const spacing = 1.4;
+    // Spread forklifts in a line with generous spacing
+    const spacing = 2.0;
     const totalWidth = (totalAtPosition - 1) * spacing;
-    const startX = -7.4 - totalWidth / 2;
-    return new THREE.Vector3(startX + stackIndex * spacing, 0.25, 5.5);
+    const centerX = -5;
+    const startX = centerX - totalWidth / 2;
+    return new THREE.Vector3(startX + stackIndex * spacing, 0.25, 6.5);
   }
 
   const base = getCellPosition(Math.min(position, CELL_COUNT) - 1);
-  const offsetX = (stackIndex % 2) * 0.5 - 0.25;
-  const offsetZ = Math.floor(stackIndex / 2) * 0.5 - 0.25;
+  const offsetX = (stackIndex % 2) * 0.7 - 0.35;
+  const offsetZ = Math.floor(stackIndex / 2) * 0.7 - 0.35;
 
   return new THREE.Vector3(base.x + offsetX, 0.25, base.z + offsetZ);
 }
