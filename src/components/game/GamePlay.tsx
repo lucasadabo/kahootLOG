@@ -108,23 +108,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const channel = gameSupabase
       .channel(`gameplay-${gameId}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` }, (payload) => {
-        console.log("[GamePlay] jogos realtime:", payload.new);
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${gameId}` }, () => {
         fetchGameState();
-        const next = payload.new as { jogador_atual_id: string | null };
-        if (next.jogador_atual_id === playerId) {
-          setPhase("waiting");
-          setDiceValue(null);
-          setPergunta(null);
-          setSelectedAnswer(null);
-          setEventMessage(null);
-          setErrorMessage(null);
-        }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, () => {
         fetchGameState();
       })
       .subscribe((status) => console.log("[GamePlay] subscription:", status));
+
+    // Polling fallback every 2s
+    const pollInterval = window.setInterval(() => {
+      fetchGameState();
+    }, 2000);
 
     return () => {
       if (rollTimeoutRef.current) {
