@@ -10,16 +10,15 @@ interface Player {
   posicao: number;
 }
 
-// Unique intense colors for up to 8 players
 const FORKLIFT_COLORS = [
-  "#ef4444", // red
-  "#3b82f6", // blue
-  "#22c55e", // green
-  "#f59e0b", // amber
-  "#a855f7", // purple
-  "#ec4899", // pink
-  "#14b8a6", // teal
-  "#e11d48", // rose
+  "#ef4444",
+  "#3b82f6",
+  "#22c55e",
+  "#f59e0b",
+  "#a855f7",
+  "#ec4899",
+  "#14b8a6",
+  "#e11d48",
 ];
 
 interface WarehouseBoard3DProps {
@@ -28,38 +27,128 @@ interface WarehouseBoard3DProps {
 }
 
 const CELL_COUNT = 42;
-const COLUMNS = 6;
-const ROWS = 7;
-const CELL_GAP_X = 1.85;
-const CELL_GAP_Z = 1.55;
+const CELL_W = 1.35;
+const CELL_D = 1.15;
+const GAP = 0.12;
+const STEP_X = CELL_W + GAP;
+const STEP_Z = CELL_D + GAP;
 
-function getCellPosition(index: number) {
-  const row = Math.floor(index / COLUMNS);
-  const rawColumn = index % COLUMNS;
-  const column = row % 2 === 0 ? rawColumn : COLUMNS - 1 - rawColumn;
+// Row definitions: cells per row and direction
+const ROWS = [
+  { count: 10, dir: 1 },   // row 0: 1-10 L→R
+  { count: 10, dir: -1 },  // row 1: 11-20 R→L
+  { count: 10, dir: 1 },   // row 2: 21-30 L→R
+  { count: 12, dir: -1 },  // row 3: 31-42 R→L
+];
 
-  return new THREE.Vector3(
-    (column - (COLUMNS - 1) / 2) * CELL_GAP_X,
-    0.2,
-    ((ROWS - 1) / 2 - row) * CELL_GAP_Z,
-  );
+function getCellRowCol(index: number): { row: number; col: number; colCount: number } {
+  let remaining = index;
+  for (let r = 0; r < ROWS.length; r++) {
+    if (remaining < ROWS[r].count) {
+      return { row: r, col: remaining, colCount: ROWS[r].count };
+    }
+    remaining -= ROWS[r].count;
+  }
+  return { row: 3, col: 11, colCount: 12 };
+}
+
+function getCellPosition(index: number): THREE.Vector3 {
+  const { row, col, colCount } = getCellRowCol(index);
+  const rowDef = ROWS[row];
+
+  const maxCols = 12;
+  const totalWidth = (maxCols - 1) * STEP_X;
+  const rowWidth = (colCount - 1) * STEP_X;
+  const rowOffset = (totalWidth - rowWidth) / 2;
+
+  let x: number;
+  if (rowDef.dir === 1) {
+    x = -totalWidth / 2 + rowOffset + col * STEP_X;
+  } else {
+    x = totalWidth / 2 - rowOffset - col * STEP_X;
+  }
+
+  const z = (ROWS.length - 1) * STEP_Z / 2 - row * STEP_Z;
+
+  return new THREE.Vector3(x, 0.06, z);
 }
 
 function getForkliftPosition(position: number, stackIndex: number, totalAtPosition: number) {
   if (position <= 0) {
-    // Spread forklifts in a line with generous spacing
-    const spacing = 2.0;
+    const spacing = 2.2;
     const totalWidth = (totalAtPosition - 1) * spacing;
-    const centerX = -5;
-    const startX = centerX - totalWidth / 2;
-    return new THREE.Vector3(startX + stackIndex * spacing, 0.25, 6.5);
+    const startX = -totalWidth / 2;
+    return new THREE.Vector3(startX + stackIndex * spacing, 0.15, (ROWS.length - 1) * STEP_Z / 2 + 2.5);
   }
 
   const base = getCellPosition(Math.min(position, CELL_COUNT) - 1);
-  const offsetX = (stackIndex % 2) * 0.7 - 0.35;
-  const offsetZ = Math.floor(stackIndex / 2) * 0.7 - 0.35;
+  const offsetX = (stackIndex % 3 - 1) * 0.55;
+  const offsetZ = Math.floor(stackIndex / 3) * 0.55;
 
-  return new THREE.Vector3(base.x + offsetX, 0.25, base.z + offsetZ);
+  return new THREE.Vector3(base.x + offsetX, 0.15, base.z + offsetZ);
+}
+
+// Hazard stripe texture for DESAFIO cells
+function HazardCell({ position }: { position: THREE.Vector3 }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0, 0, 128, 128);
+    const stripeW = 18;
+    ctx.fillStyle = "#f59e0b";
+    for (let i = -128; i < 256; i += stripeW * 2) {
+      ctx.save();
+      ctx.translate(64, 64);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(i, -128, stripeW, 256);
+      ctx.restore();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }, []);
+
+  return (
+    <mesh ref={meshRef} position={[position.x, position.y + 0.01, position.z]} castShadow receiveShadow>
+      <boxGeometry args={[CELL_W, 0.14, CELL_D]} />
+      <meshStandardMaterial map={texture} roughness={0.7} />
+    </mesh>
+  );
+}
+
+// Checkered finish texture
+function FinishCell({ position }: { position: THREE.Vector3 }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    const size = 16;
+    for (let y = 0; y < 128; y += size) {
+      for (let x = 0; x < 128; x += size) {
+        ctx.fillStyle = (x / size + y / size) % 2 === 0 ? "#ffffff" : "#111111";
+        ctx.fillRect(x, y, size, size);
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }, []);
+
+  return (
+    <group position={[position.x, position.y + 0.01, position.z]}>
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[CELL_W, 0.14, CELL_D]} />
+        <meshStandardMaterial map={texture} roughness={0.5} />
+      </mesh>
+      <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color="#cc0000" anchorX="center" anchorY="middle" font="https://fonts.gstatic.com/s/fredoka/v14/5aUV9_-1phKLFgshYDc5kQ.woff2" fontWeight={700}>
+        FINISH
+      </Text>
+    </group>
+  );
 }
 
 function ForkliftPawn({ color, label, active, position }: { color: string; label: string; active: boolean; position: THREE.Vector3 }) {
@@ -73,62 +162,102 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-
     groupRef.current.position.lerp(position, 1 - Math.exp(-4 * delta));
   });
 
   return (
     <group ref={groupRef}>
-      {active && <mesh position={[0, 1.5, 0]}>
-        <sphereGeometry args={[0.14, 24, 24]} />
-        <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.8} />
-      </mesh>}
+      {active && (
+        <mesh position={[0, 1.3, 0]}>
+          <sphereGeometry args={[0.12, 24, 24]} />
+          <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={1} />
+        </mesh>
+      )}
 
-      <mesh castShadow receiveShadow position={[0, 0.38, 0]}>
-        <boxGeometry args={[0.9, 0.42, 0.65]} />
-        <meshStandardMaterial color={color} metalness={0.55} roughness={0.35} emissive={color} emissiveIntensity={0.15} />
+      {/* Body */}
+      <mesh castShadow receiveShadow position={[0, 0.32, 0]}>
+        <boxGeometry args={[0.75, 0.35, 0.52]} />
+        <meshStandardMaterial color={color} metalness={0.5} roughness={0.35} emissive={color} emissiveIntensity={0.15} />
       </mesh>
 
-      <mesh castShadow receiveShadow position={[0.06, 0.62, 0]}>
-        <boxGeometry args={[0.34, 0.32, 0.42]} />
-        <meshStandardMaterial color="#d1d5db" metalness={0.85} roughness={0.25} />
+      {/* Cabin */}
+      <mesh castShadow receiveShadow position={[0.05, 0.54, 0]}>
+        <boxGeometry args={[0.28, 0.26, 0.36]} />
+        <meshStandardMaterial color="#d1d5db" metalness={0.8} roughness={0.25} />
       </mesh>
 
-      <mesh castShadow position={[-0.24, 0.72, 0]}>
-        <boxGeometry args={[0.08, 0.9, 0.08]} />
+      {/* Mast */}
+      <mesh castShadow position={[-0.2, 0.6, 0]}>
+        <boxGeometry args={[0.06, 0.72, 0.06]} />
+        <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.35} />
+      </mesh>
+      <mesh castShadow position={[-0.06, 0.6, 0]}>
+        <boxGeometry args={[0.06, 0.72, 0.06]} />
         <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.35} />
       </mesh>
 
-      <mesh castShadow position={[-0.08, 0.72, 0]}>
-        <boxGeometry args={[0.08, 0.9, 0.08]} />
-        <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.35} />
+      {/* Forks */}
+      <mesh castShadow position={[-0.2, 0.1, 0.1]}>
+        <boxGeometry args={[0.44, 0.04, 0.04]} />
+        <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.25} />
       </mesh>
-
-      <mesh castShadow position={[-0.24, 0.12, 0.12]}>
-        <boxGeometry args={[0.52, 0.05, 0.05]} />
+      <mesh castShadow position={[-0.2, 0.1, -0.1]}>
+        <boxGeometry args={[0.44, 0.04, 0.04]} />
         <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.25} />
       </mesh>
 
-      <mesh castShadow position={[-0.24, 0.12, -0.12]}>
-        <boxGeometry args={[0.52, 0.05, 0.05]} />
-        <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.25} />
-      </mesh>
-
+      {/* Wheels */}
       {[
-        [0.22, 0.1, 0.24],
-        [0.22, 0.1, -0.24],
-        [-0.18, 0.1, 0.24],
-        [-0.18, 0.1, -0.24],
+        [0.2, 0.08, 0.2],
+        [0.2, 0.08, -0.2],
+        [-0.15, 0.08, 0.2],
+        [-0.15, 0.08, -0.2],
       ].map((wheel, index) => (
         <mesh key={index} castShadow rotation={[Math.PI / 2, 0, 0]} position={wheel as [number, number, number]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.08, 24]} />
+          <cylinderGeometry args={[0.08, 0.08, 0.06, 24]} />
           <meshStandardMaterial color="#111827" roughness={0.8} />
         </mesh>
       ))}
 
-      <Text position={[0, 1.1, 0]} fontSize={0.22} color="white" anchorX="center" anchorY="middle">
+      <Text position={[0, 0.95, 0]} fontSize={0.2} color="white" anchorX="center" anchorY="middle" outlineWidth={0.02} outlineColor="#000000">
         {label}
       </Text>
+    </group>
+  );
+}
+
+// Warehouse rack with boxes
+function Rack({ position, side }: { position: [number, number, number]; side: "left" | "right" }) {
+  const flip = side === "left" ? -1 : 1;
+  return (
+    <group position={position}>
+      {/* Uprights - orange */}
+      {[-0.55, 0.55].map((z, i) => (
+        <mesh key={i} castShadow position={[0, 1.5, z]}>
+          <boxGeometry args={[0.08, 3, 0.08]} />
+          <meshStandardMaterial color="#ea580c" metalness={0.4} roughness={0.5} />
+        </mesh>
+      ))}
+      {/* Shelves */}
+      {[0.5, 1.2, 1.9, 2.6].map((y, i) => (
+        <mesh key={i} castShadow receiveShadow position={[flip * 0.15, y, 0]}>
+          <boxGeometry args={[0.6, 0.06, 1.2]} />
+          <meshStandardMaterial color="#78716c" metalness={0.3} roughness={0.6} />
+        </mesh>
+      ))}
+      {/* Boxes */}
+      {[
+        { pos: [flip * 0.15, 0.7, -0.25] as [number, number, number], color: "#a16207", size: [0.4, 0.35, 0.35] as [number, number, number] },
+        { pos: [flip * 0.15, 0.7, 0.25] as [number, number, number], color: "#92400e", size: [0.35, 0.3, 0.35] as [number, number, number] },
+        { pos: [flip * 0.15, 1.4, 0] as [number, number, number], color: "#a16207", size: [0.45, 0.35, 0.5] as [number, number, number] },
+        { pos: [flip * 0.15, 2.1, -0.2] as [number, number, number], color: "#78350f", size: [0.38, 0.35, 0.38] as [number, number, number] },
+        { pos: [flip * 0.15, 2.1, 0.25] as [number, number, number], color: "#92400e", size: [0.3, 0.3, 0.3] as [number, number, number] },
+      ].map((box, i) => (
+        <mesh key={i} castShadow position={box.pos}>
+          <boxGeometry args={box.size} />
+          <meshStandardMaterial color={box.color} roughness={0.85} />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -141,101 +270,129 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
 
   const playersByPosition = useMemo(() => {
     const grouped = new Map<number, Player[]>();
-
     players.forEach((player) => {
       const key = Math.max(0, Math.min(42, player.posicao));
       const list = grouped.get(key) ?? [];
       list.push(player);
       grouped.set(key, list);
     });
-
     return grouped;
   }, [players]);
 
+  const desafioCells = new Set([10, 20, 30, 40]);
+
   return (
     <>
-      <color attach="background" args={["#10151d"]} />
-      <fog attach="fog" args={["#10151d", 16, 34]} />
+      <color attach="background" args={["#1a1510"]} />
+      <fog attach="fog" args={["#1a1510", 18, 38]} />
 
-      <ambientLight intensity={1.2} />
+      <ambientLight intensity={0.8} />
       <directionalLight
         castShadow
-        intensity={2}
-        position={[8, 14, 8]}
+        intensity={1.8}
+        position={[6, 16, 8]}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
-      <spotLight position={[-10, 14, 6]} angle={0.45} intensity={1.2} penumbra={0.5} color="#7dd3fc" />
+      <spotLight position={[-8, 12, 4]} angle={0.5} intensity={0.8} penumbra={0.6} color="#fde68a" />
+      <spotLight position={[8, 12, -2]} angle={0.5} intensity={0.6} penumbra={0.6} color="#fef3c7" />
 
+      {/* Warehouse floor */}
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
-        <planeGeometry args={[18, 16]} />
-        <meshStandardMaterial color="#2a3441" roughness={0.95} />
+        <planeGeometry args={[24, 16]} />
+        <meshStandardMaterial color="#78716c" roughness={0.95} />
       </mesh>
 
+      {/* Board area - concrete */}
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <planeGeometry args={[12.8, 11.6]} />
-        <meshStandardMaterial color="#3a4654" roughness={0.85} />
+        <planeGeometry args={[19, 8]} />
+        <meshStandardMaterial color="#a8a29e" roughness={0.9} />
       </mesh>
 
-      {[-7.2, 7.2].map((x, sideIndex) => (
-        <group key={sideIndex} position={[x, 0, 0]}>
-          {Array.from({ length: 5 }).map((_, rackIndex) => (
-            <group key={rackIndex} position={[0, 0, 4.8 - rackIndex * 2.4]}>
-              <mesh castShadow receiveShadow position={[0, 1.15, 0]}>
-                <boxGeometry args={[0.5, 2.2, 1.4]} />
-                <meshStandardMaterial color="#334155" metalness={0.55} roughness={0.45} />
-              </mesh>
-              {[0.45, 1.0, 1.55].map((y, shelfIndex) => (
-                <mesh key={shelfIndex} castShadow receiveShadow position={[0, y, 0]}>
-                  <boxGeometry args={[1.45, 0.08, 1.4]} />
-                  <meshStandardMaterial color="#64748b" metalness={0.5} roughness={0.4} />
-                </mesh>
-              ))}
-              {[-0.32, 0, 0.32].map((zOffset, boxIndex) => (
-                <mesh key={boxIndex} castShadow receiveShadow position={[0.14, 0.55 + boxIndex * 0.55, zOffset]}>
-                  <boxGeometry args={[0.42, 0.38, 0.32]} />
-                  <meshStandardMaterial color={boxIndex % 2 === 0 ? "#f59e0b" : "#22c55e"} roughness={0.85} />
-                </mesh>
-              ))}
-            </group>
-          ))}
-        </group>
+      {/* Warehouse racks on both sides */}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Rack key={`left-${i}`} position={[-10.5, 0, 3.5 - i * 1.8]} side="left" />
+      ))}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Rack key={`right-${i}`} position={[10.5, 0, 3.5 - i * 1.8]} side="right" />
       ))}
 
-      <mesh receiveShadow position={[-7.3, 0.15, 5.5]}>
-        <boxGeometry args={[2.4, 0.2, 1.2]} />
-        <meshStandardMaterial color="#1e293b" roughness={0.65} />
-      </mesh>
+      {/* START marker */}
+      <group position={[cells[0].position.x - STEP_X, 0.06, cells[0].position.z]}>
+        <mesh castShadow receiveShadow position={[0, 0.01, 0]}>
+          <boxGeometry args={[CELL_W, 0.14, CELL_D]} />
+          <meshStandardMaterial color="#16a34a" roughness={0.6} />
+        </mesh>
+        <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle" fontWeight={700}>
+          START
+        </Text>
+      </group>
 
-      <Text position={[-7.3, 0.45, 5.5]} fontSize={0.26} color="#e2e8f0" anchorX="center" anchorY="middle">
-        Entrada
-      </Text>
-
+      {/* Board cells */}
       {cells.map((cell) => {
-        const specialColor = cell.number === 10 || cell.number === 40
-          ? "#fb7185"
-          : cell.number === 20
-            ? "#2dd4bf"
-            : cell.number === 30
-              ? "#facc15"
-              : "#cbd5e1";
+        if (cell.number === 42) {
+          return <FinishCell key={cell.number} position={cell.position} />;
+        }
+
+        if (desafioCells.has(cell.number)) {
+          return (
+            <group key={cell.number}>
+              <HazardCell position={cell.position} />
+              <Text
+                position={[cell.position.x, cell.position.y + 0.13, cell.position.z + 0.15]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                fontSize={0.12}
+                color="#f59e0b"
+                anchorX="center"
+                anchorY="middle"
+                fontWeight={700}
+              >
+                DESAFIO
+              </Text>
+              <Text
+                position={[cell.position.x, cell.position.y + 0.13, cell.position.z - 0.18]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                fontSize={0.22}
+                color="#f59e0b"
+                anchorX="center"
+                anchorY="middle"
+                fontWeight={700}
+              >
+                {cell.number}
+              </Text>
+            </group>
+          );
+        }
+
+        // Alternate gold and dark gray
+        const isGold = cell.number % 2 === 1;
+        const cellColor = isGold ? "#b59532" : "#3f3f46";
+        const textColor = isGold ? "#1a1510" : "#e7e5e4";
 
         return (
           <group key={cell.number} position={cell.position}>
-            <mesh castShadow receiveShadow>
-              <boxGeometry args={[1.25, 0.18, 0.95]} />
-              <meshStandardMaterial color={specialColor} metalness={0.15} roughness={0.65} />
+            <mesh castShadow receiveShadow position={[0, 0.01, 0]}>
+              <boxGeometry args={[CELL_W, 0.14, CELL_D]} />
+              <meshStandardMaterial color={cellColor} metalness={0.2} roughness={0.65} />
             </mesh>
-            <Text position={[0, 0.18, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.22} color="#0f172a" anchorX="center" anchorY="middle">
+            <Text
+              position={[0, 0.12, 0]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              fontSize={0.28}
+              color={textColor}
+              anchorX="center"
+              anchorY="middle"
+              fontWeight={700}
+            >
               {cell.number}
             </Text>
           </group>
         );
       })}
 
+      {/* Forklift pawns */}
       {Array.from(playersByPosition.entries()).flatMap(([position, positionPlayers]) =>
         positionPlayers.map((player, index) => {
-          // Use ordered index from full players array for unique color
           const playerGlobalIndex = players.findIndex(p => p.id === player.id);
           const color = FORKLIFT_COLORS[playerGlobalIndex % FORKLIFT_COLORS.length];
           return (
@@ -250,7 +407,7 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
         }),
       )}
 
-      <OrbitControls enablePan={false} minDistance={12} maxDistance={20} minPolarAngle={0.8} maxPolarAngle={1.35} />
+      <OrbitControls enablePan={false} minDistance={10} maxDistance={22} minPolarAngle={0.5} maxPolarAngle={1.3} />
     </>
   );
 }
@@ -264,13 +421,13 @@ export function WarehouseBoard3D({ players, currentPlayerId }: WarehouseBoard3DP
           <h2 className="text-2xl font-display font-bold text-foreground">Progresso em tempo real</h2>
         </div>
         <div className="text-right text-sm font-body text-muted-foreground">
-          <p>Casas especiais: 10, 20, 30, 40</p>
-          <p>Empilhadeira brilhando = jogador da vez</p>
+          <p>🟡 Dourada = ímpar · ⬛ Cinza = par</p>
+          <p>⚠️ DESAFIO: casas 10, 20, 30, 40</p>
         </div>
       </div>
 
       <div className="h-[520px] w-full">
-        <Canvas shadows gl={{ antialias: true }} camera={{ position: [0, 11.5, 9], fov: 42 }}>
+        <Canvas shadows gl={{ antialias: true }} camera={{ position: [0, 13, 10], fov: 40 }}>
           <WarehouseScene players={players} currentPlayerId={currentPlayerId} />
         </Canvas>
       </div>
