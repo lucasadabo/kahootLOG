@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { X, HelpCircle, CheckCircle2, XCircle } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { HelpCircle, CheckCircle2, XCircle } from "lucide-react";
 import { gameSupabase } from "@/lib/gameSupabase";
 
 interface Pergunta {
@@ -23,15 +23,16 @@ interface RoundResult {
 interface AdminQuestionOverlayProps {
   gameId: string;
   players: { id: string; nickname: string }[];
-  onRoundFinished?: () => void;
+  onResultShown?: () => void;
 }
 
-export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: AdminQuestionOverlayProps) {
+export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQuestionOverlayProps) {
   const [currentQuestion, setCurrentQuestion] = useState<Pergunta | null>(null);
   const [currentPlayerName, setCurrentPlayerName] = useState<string>("");
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [visible, setVisible] = useState(false);
+  const autoHideRef = useRef<number | null>(null);
 
   const findPlayerName = useCallback((id: string) => {
     return players.find((p) => p.id === id)?.nickname ?? "Jogador";
@@ -51,17 +52,28 @@ export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: Admin
         setDiceValue(msg.dado);
         setRoundResult(null);
         setVisible(true);
+        if (autoHideRef.current) clearTimeout(autoHideRef.current);
       })
       .on("broadcast", { event: "question_answered" }, (payload) => {
         const msg = payload.payload as RoundResult;
         setRoundResult(msg);
+
+        // Auto-hide after 3 seconds so admin can see the board animation
+        if (autoHideRef.current) clearTimeout(autoHideRef.current);
+        autoHideRef.current = window.setTimeout(() => {
+          setVisible(false);
+          setCurrentQuestion(null);
+          setRoundResult(null);
+          onResultShown?.();
+        }, 3000);
       })
       .subscribe();
 
     return () => {
+      if (autoHideRef.current) clearTimeout(autoHideRef.current);
       gameSupabase.removeChannel(channel);
     };
-  }, [gameId, findPlayerName]);
+  }, [gameId, findPlayerName, onResultShown]);
 
   if (!visible || !currentQuestion) return null;
 
@@ -81,12 +93,6 @@ export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: Admin
               </p>
             </div>
           </div>
-          <button
-            onClick={() => { setVisible(false); setCurrentQuestion(null); setRoundResult(null); }}
-            className="p-2 rounded-lg hover:bg-muted transition-colors"
-          >
-            <X className="w-5 h-5 text-muted-foreground" />
-          </button>
         </div>
 
         {/* Question */}
@@ -147,17 +153,9 @@ export function AdminQuestionOverlay({ gameId, players, onRoundFinished }: Admin
               {roundResult.evento && (
                 <p className="text-accent font-display font-bold mt-2">⚡ {roundResult.evento}</p>
               )}
-              <button
-                onClick={() => {
-                  onRoundFinished?.();
-                  setVisible(false);
-                  setCurrentQuestion(null);
-                  setRoundResult(null);
-                }}
-                className="mt-4 inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-display font-bold text-lg hover:scale-[1.03] active:scale-[0.97] transition-all shadow-[var(--shadow-glow)]"
-              >
-                ▶ Próxima Pergunta
-              </button>
+              <p className="text-xs text-muted-foreground font-body animate-pulse-slow mt-2">
+                Fechando em instantes...
+              </p>
             </div>
           )}
         </div>

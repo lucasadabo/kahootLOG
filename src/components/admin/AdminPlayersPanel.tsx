@@ -25,9 +25,10 @@ interface AdminPlayersPanelProps {
   gameFinished: boolean;
   gameId: string;
   onPlayerRemoved?: () => void;
+  vertical?: boolean;
 }
 
-export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, gameId, onPlayerRemoved }: AdminPlayersPanelProps) {
+export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, gameId, onPlayerRemoved, vertical }: AdminPlayersPanelProps) {
   const [playerToRemove, setPlayerToRemove] = useState<Player | null>(null);
   const [removing, setRemoving] = useState(false);
 
@@ -35,20 +36,14 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
     if (!playerToRemove) return;
     setRemoving(true);
     try {
-      // If removing the current player, advance turn first
       if (playerToRemove.id === currentPlayerId) {
         await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
       }
-
       const { error } = await gameSupabase
         .from("jogadores")
         .delete()
         .eq("id", playerToRemove.id);
-
-      console.log("[Admin] jogador removido:", { id: playerToRemove.id, error });
-      if (!error) {
-        onPlayerRemoved?.();
-      }
+      if (!error) onPlayerRemoved?.();
     } catch (err) {
       console.error("[Admin] erro ao remover jogador:", err);
     } finally {
@@ -59,51 +54,48 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
 
   return (
     <>
-      <div className="space-y-4">
-        <div className="flex items-center gap-3 text-muted-foreground font-body text-lg">
-          <Users className="w-6 h-6" />
-          <span>
-            {players.length} jogador{players.length !== 1 ? "es" : ""} conectado{players.length !== 1 ? "s" : ""}
-          </span>
+      <div className={`space-y-3 ${vertical ? "h-full" : ""}`}>
+        <div className="flex items-center gap-2 text-muted-foreground font-body text-sm">
+          <Users className="w-4 h-4" />
+          <span>{players.length} jogador{players.length !== 1 ? "es" : ""}</span>
         </div>
 
         {players.length === 0 ? (
-          <div className="p-12 rounded-2xl bg-card/50 border border-border text-center">
-            <p className="text-muted-foreground font-body text-lg animate-pulse-slow">
+          <div className="p-8 rounded-xl bg-card/50 border border-border text-center">
+            <p className="text-muted-foreground font-body text-sm animate-pulse-slow">
               Aguardando jogadores...
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className={vertical ? "flex flex-col gap-2" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
             {players.map((player, i) => (
               <div
                 key={player.id}
-                className={`flex items-center gap-3 p-4 rounded-xl border animate-bounce-in ${
+                className={`flex items-center gap-2 p-3 rounded-xl border ${
                   player.id === currentPlayerId && !gameFinished
-                    ? "bg-accent/10 border-accent/30 ring-2 ring-accent/20"
+                    ? "bg-accent/10 border-accent/30 ring-1 ring-accent/20"
                     : "bg-card border-border"
                 }`}
-                style={{ animationDelay: `${i * 0.05}s` }}
               >
                 <div
-                  className="w-12 h-12 rounded-lg flex items-center justify-center text-xl font-display font-bold shrink-0"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-display font-bold shrink-0"
                   style={{ backgroundColor: player.cor_empilhadeira, color: "hsl(var(--background))" }}
                 >
                   {player.nickname[0].toUpperCase()}
                 </div>
 
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-display font-medium text-foreground text-lg truncate block">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="font-display font-medium text-foreground text-sm truncate block">
                       {player.nickname}
                     </span>
                     {player.id === currentPlayerId && !gameFinished && (
-                      <Zap className="w-4 h-4 text-accent shrink-0" />
+                      <Zap className="w-3 h-3 text-accent shrink-0" />
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
+                  <div className="flex items-center gap-1">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden flex-1">
                       <div
                         className="h-full rounded-full transition-all duration-500"
                         style={{
@@ -112,7 +104,7 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
                         }}
                       />
                     </div>
-                    <span className="text-xs font-display font-bold text-muted-foreground">
+                    <span className="text-[10px] font-display font-bold text-muted-foreground">
                       {player.posicao}/42
                     </span>
                   </div>
@@ -120,10 +112,10 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
 
                 <button
                   onClick={() => setPlayerToRemove(player)}
-                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                   title="Remover jogador"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3 h-3" />
                 </button>
               </div>
             ))}
@@ -137,7 +129,6 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
             <AlertDialogTitle className="font-display">Remover jogador</AlertDialogTitle>
             <AlertDialogDescription className="font-body">
               Tem certeza que deseja remover <strong>{playerToRemove?.nickname}</strong> da partida?
-              Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
