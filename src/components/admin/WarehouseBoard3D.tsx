@@ -144,7 +144,7 @@ function FinishCell({ position }: { position: THREE.Vector3 }) {
         <boxGeometry args={[CELL_W, 0.14, CELL_D]} />
         <meshStandardMaterial map={texture} roughness={0.5} />
       </mesh>
-      <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color="#cc0000" anchorX="center" anchorY="middle" font="https://fonts.gstatic.com/s/fredoka/v14/5aUV9_-1phKLFgshYDc5kQ.woff2" fontWeight={700}>
+      <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color="#cc0000" anchorX="center" anchorY="middle" fontWeight={700}>
         FINISH
       </Text>
     </group>
