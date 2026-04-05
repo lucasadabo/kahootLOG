@@ -45,13 +45,17 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const broadcastChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
   const prevCurrentPlayerRef = useRef<string | null>(null);
 
+  // Track used question IDs to avoid repetition
+  const usedQuestionIdsRef = useRef<Set<string>>(new Set());
+  // Selected categories from admin
+  const selectedCategoriesRef = useRef<string[]>([]);
+
   const isMyTurn = currentPlayerId === playerId;
 
-  // Reset phase when turn changes away from me or to me
+  // Reset phase when turn changes
   useEffect(() => {
     if (prevCurrentPlayerRef.current !== currentPlayerId && currentPlayerId !== null) {
       if (currentPlayerId === playerId) {
-        // It's now my turn — reset to waiting
         setPhase("waiting");
         setDiceValue(null);
         setPergunta(null);
@@ -60,7 +64,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         setErrorMessage(null);
         setResultMessage("");
       } else if (phase === "result") {
-        // It's someone else's turn and I was showing result — go back to idle
         setPhase("waiting");
         setDiceValue(null);
         setPergunta(null);
@@ -79,8 +82,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       .eq("id", gameId)
       .single();
 
-    console.log("[GamePlay] jogo SELECT:", { jogoData, jogoError });
-
     if (!jogoError && jogoData) {
       setCurrentPlayerId(jogoData.jogador_atual_id);
       setGameStatus(jogoData.status ?? "aguardando");
@@ -92,8 +93,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       .eq("jogo_id", gameId)
       .order("created_at", { ascending: true });
 
-    console.log("[GamePlay] jogadores SELECT:", { jogadoresData, jogadoresError });
-
     if (!jogadoresError && jogadoresData) {
       setPlayers(jogadoresData);
     }
@@ -103,7 +102,15 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     fetchGameState();
 
     const broadcastChannel = gameSupabase.channel(`admin-broadcast-${gameId}`);
-    broadcastChannel.subscribe();
+    broadcastChannel
+      .on("broadcast", { event: "game_categories" }, (payload) => {
+        const cats = payload.payload?.categories as string[] | undefined;
+        if (cats && cats.length > 0) {
+          selectedCategoriesRef.current = cats;
+          console.log("[GamePlay] received categories:", cats);
+        }
+      })
+      .subscribe();
     broadcastChannelRef.current = broadcastChannel;
 
     const channel = gameSupabase
@@ -114,7 +121,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${gameId}` }, () => {
         fetchGameState();
       })
-      .subscribe((status) => console.log("[GamePlay] subscription:", status));
+      .subscribe();
 
     // Polling fallback every 2s
     const pollInterval = window.setInterval(() => {
@@ -122,9 +129,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     }, 2000);
 
     return () => {
-      if (rollTimeoutRef.current) {
-        window.clearTimeout(rollTimeoutRef.current);
-      }
+      if (rollTimeoutRef.current) window.clearTimeout(rollTimeoutRef.current);
       window.clearInterval(pollInterval);
       gameSupabase.removeChannel(channel);
       gameSupabase.removeChannel(broadcastChannel);
@@ -132,54 +137,85 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   }, [gameId, playerId, fetchGameState]);
 
   const fetchQuestion = async (rolledValue: number) => {
-    const { data, error } = await gameSupabase.rpc("pegar_pergunta");
-    console.log("[GamePlay] pegar_pergunta RPC:", { data, error });
+    try {
+      // Build query filtering by categories and excluding used questions
+      let query = gameSupabase.from("perguntas").select("*");
+      
+      const cats = selectedCategoriesRef.current;
+      if (cats.length > 0) {
+        query = query.in("categoria", cats);
+      }
 
-    if (error || !data || typeof data !== "object" || !("id" in data)) {
-      console.error("[GamePlay] pegar_pergunta ERROR:", error, data);
-      setErrorMessage("Não foi possível carregar uma pergunta do banco.");
-      setDiceValue(rolledValue);
+      const usedIds = Array.from(usedQuestionIdsRef.current);
+      if (usedIds.length > 0) {
+        query = query.not("id", "in", `(${usedIds.join(",")})`);
+      }
+
+      const { data, error } = await query;
+
+      let questions = data;
+
+      // If no unused questions left, reset and fetch all
+      if (!questions || questions.length === 0) {
+        usedQuestionIdsRef.current.clear();
+        let resetQuery = gameSupabase.from("perguntas").select("*");
+        if (cats.length > 0) {
+          resetQuery = resetQuery.in("categoria", cats);
+        }
+        const { data: resetData } = await resetQuery;
+        questions = resetData;
+      }
+
+      if (!questions || questions.length === 0) {
+        setErrorMessage("Nenhuma pergunta disponível para as categorias selecionadas.");
+        setDiceValue(rolledValue);
+        rollTimeoutRef.current = window.setTimeout(() => setPhase("waiting"), 1800);
+        return;
+      }
+
+      // Pick random question
+      const randomQ = questions[Math.floor(Math.random() * questions.length)];
+      usedQuestionIdsRef.current.add(randomQ.id);
+
+      const perguntaObj: Pergunta = {
+        id: String(randomQ.id),
+        texto: String(randomQ.pergunta ?? randomQ.texto),
+        alternativa_a: String(randomQ.alternativa_a),
+        alternativa_b: String(randomQ.alternativa_b),
+        alternativa_c: String(randomQ.alternativa_c),
+        alternativa_d: String(randomQ.alternativa_d),
+        resposta_correta: String(randomQ.correta ?? randomQ.resposta_correta),
+      };
+
+      console.log("[GamePlay] pergunta selecionada:", perguntaObj.id, "usadas:", usedQuestionIdsRef.current.size);
+
       rollTimeoutRef.current = window.setTimeout(() => {
-        setPhase("waiting");
-      }, 1800);
-      return;
-    }
+        setPergunta(perguntaObj);
+        setPhase("question");
 
-    // RPC returns: id, pergunta, alternativa_a-d, correta, categoria, dificuldade
-    const rpcData = data as Record<string, string>;
-    const perguntaObj: Pergunta = {
-      id: String(rpcData.id),
-      texto: String(rpcData.pergunta),
-      alternativa_a: String(rpcData.alternativa_a),
-      alternativa_b: String(rpcData.alternativa_b),
-      alternativa_c: String(rpcData.alternativa_c),
-      alternativa_d: String(rpcData.alternativa_d),
-      resposta_correta: String(rpcData.correta),
-    };
-
-    console.log("[GamePlay] pergunta from RPC:", perguntaObj);
-
-    rollTimeoutRef.current = window.setTimeout(() => {
-      setPergunta(perguntaObj);
-      setPhase("question");
-
-      broadcastChannelRef.current?.send({
-        type: "broadcast",
-        event: "question_started",
-        payload: {
-          playerId,
-          dado: rolledValue,
-          pergunta: {
-            id: perguntaObj.id,
-            texto: perguntaObj.texto,
-            alternativa_a: perguntaObj.alternativa_a,
-            alternativa_b: perguntaObj.alternativa_b,
-            alternativa_c: perguntaObj.alternativa_c,
-            alternativa_d: perguntaObj.alternativa_d,
+        broadcastChannelRef.current?.send({
+          type: "broadcast",
+          event: "question_started",
+          payload: {
+            playerId,
+            dado: rolledValue,
+            pergunta: {
+              id: perguntaObj.id,
+              texto: perguntaObj.texto,
+              alternativa_a: perguntaObj.alternativa_a,
+              alternativa_b: perguntaObj.alternativa_b,
+              alternativa_c: perguntaObj.alternativa_c,
+              alternativa_d: perguntaObj.alternativa_d,
+            },
           },
-        },
-      });
-    }, 1800);
+        });
+      }, 1800);
+    } catch (err) {
+      console.error("[GamePlay] erro ao buscar pergunta:", err);
+      setErrorMessage("Erro ao buscar pergunta.");
+      setDiceValue(rolledValue);
+      rollTimeoutRef.current = window.setTimeout(() => setPhase("waiting"), 1800);
+    }
   };
 
   const handleRollDice = async () => {
@@ -188,9 +224,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setSelectedAnswer(null);
     setResultMessage("");
     setEventMessage(null);
-    if (rollTimeoutRef.current) {
-      window.clearTimeout(rollTimeoutRef.current);
-    }
+    if (rollTimeoutRef.current) window.clearTimeout(rollTimeoutRef.current);
     setDiceAnimating(true);
     setPhase("rolling");
 
@@ -204,7 +238,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         setDiceValue(finalValue);
         setDiceAnimating(false);
         setPhase("rolled");
-        console.log("[GamePlay] dado:", finalValue);
         fetchQuestion(finalValue);
       }
     }, 100);
@@ -215,14 +248,11 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setSelectedAnswer(answer);
     setErrorMessage(null);
 
-    // 1. Get current position
     const { data: playerBefore, error: playerBeforeError } = await gameSupabase
       .from("jogadores")
       .select("posicao")
       .eq("id", playerId)
       .single();
-
-    console.log("[GamePlay] posição antes SELECT:", { playerBefore, playerBeforeError });
 
     if (playerBeforeError || !playerBefore) {
       setErrorMessage("Não foi possível confirmar a posição atual.");
@@ -230,99 +260,61 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     }
 
     const posicaoAntes = playerBefore.posicao;
-
-    // 2. Check answer using RPC data (already has correta from pegar_pergunta)
     const respostaCorreta = pergunta.resposta_correta;
     const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
-    console.log("[GamePlay] resposta:", { answer, correta: respostaCorreta, acertou });
 
-    // 3. Calculate new position client-side
     let novaPosicao = acertou ? posicaoAntes + diceValue : posicaoAntes;
     let evento: string | null = null;
 
     if (acertou) {
-      if (novaPosicao === 10) {
-        novaPosicao -= 2;
-        evento = "Casa 10: Volte 2 casas!";
-      } else if (novaPosicao === 20) {
-        novaPosicao += 1;
-        evento = "Casa 20: Avance +1 casa!";
-      } else if (novaPosicao === 30) {
-        await gameSupabase.from("jogadores").update({ pular_vez: true }).eq("id", playerId);
-        evento = "Casa 30: Perde a próxima vez!";
-      } else if (novaPosicao === 40) {
-        novaPosicao -= 2;
-        evento = "Casa 40: Volte 2 casas!";
-      }
-
-      if (novaPosicao >= 42) {
-        novaPosicao = 42;
-      }
+      if (novaPosicao === 10) { novaPosicao -= 2; evento = "Casa 10: Volte 2 casas!"; }
+      else if (novaPosicao === 20) { novaPosicao += 1; evento = "Casa 20: Avance +1 casa!"; }
+      else if (novaPosicao === 30) { await gameSupabase.from("jogadores").update({ pular_vez: true }).eq("id", playerId); evento = "Casa 30: Perde a próxima vez!"; }
+      else if (novaPosicao === 40) { novaPosicao -= 2; evento = "Casa 40: Volte 2 casas!"; }
+      if (novaPosicao >= 42) novaPosicao = 42;
     }
 
-    // 4. Update player position
     const { error: updateError } = await gameSupabase
       .from("jogadores")
       .update({ posicao: novaPosicao })
       .eq("id", playerId);
 
-    console.log("[GamePlay] jogadores UPDATE:", { updateError, novaPosicao });
-
     if (updateError) {
-      console.error("[GamePlay] jogadores UPDATE ERROR:", updateError);
-      setResultMessage("❌ Erro ao atualizar posição. Tente novamente.");
+      setResultMessage("❌ Erro ao atualizar posição.");
       setPhase("result");
       return;
     }
 
-    // 5. Insert rodada record
-    const { error: rodadaError } = await gameSupabase
-      .from("rodadas")
-      .insert({
-        jogo_id: gameId,
-        jogador_id: playerId,
-        pergunta_id: pergunta.id,
-        dado: diceValue,
-        acertou,
-        posicao_antes: posicaoAntes,
-        posicao_depois: novaPosicao,
-        evento,
-      });
+    await gameSupabase.from("rodadas").insert({
+      jogo_id: gameId,
+      jogador_id: playerId,
+      pergunta_id: pergunta.id,
+      dado: diceValue,
+      acertou,
+      posicao_antes: posicaoAntes,
+      posicao_depois: novaPosicao,
+      evento,
+    });
 
-    console.log("[GamePlay] rodadas INSERT:", { rodadaError });
-
-    // 6. Check win condition
     const venceu = novaPosicao >= 42;
     if (venceu) {
       await gameSupabase.from("jogos").update({ status: "finalizado" }).eq("id", gameId);
     }
 
-    // 7. Show result
     setResultMessage(
       acertou
         ? `✅ Correto! Você saiu da casa ${posicaoAntes} e foi para a ${novaPosicao}`
         : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
     );
-
     setEventMessage(evento);
 
-    // Broadcast result to admin
     broadcastChannelRef.current?.send({
       type: "broadcast",
       event: "question_answered",
-      payload: {
-        acertou,
-        posicao_antes: posicaoAntes,
-        posicao_depois: novaPosicao,
-        evento,
-        dado: diceValue,
-        nickname,
-      },
+      payload: { acertou, posicao_antes: posicaoAntes, posicao_depois: novaPosicao, evento, dado: diceValue, nickname },
     });
 
-    if (venceu) {
-      setGameStatus("finalizado");
-    }
+    if (venceu) setGameStatus("finalizado");
     setPhase("result");
     fetchGameState();
   };
