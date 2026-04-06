@@ -119,7 +119,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         }
       });
 
-    const broadcastChannel = gameSupabase.channel(`player-broadcast-${gameId}`);
+    const broadcastChannel = gameSupabase.channel(`admin-overlay-${gameId}`);
     broadcastChannel.subscribe();
     broadcastChannelRef.current = broadcastChannel;
 
