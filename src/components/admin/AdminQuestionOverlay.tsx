@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { HelpCircle, CheckCircle2, XCircle } from "lucide-react";
 import { gameSupabase } from "@/lib/gameSupabase";
 
@@ -23,22 +23,41 @@ interface RoundResult {
 interface AdminQuestionOverlayProps {
   gameId: string;
   players: { id: string; nickname: string }[];
-  onResultShown?: () => void;
+  onAdvanceTurn?: () => Promise<void> | void;
 }
 
-export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQuestionOverlayProps) {
+export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQuestionOverlayProps) {
   const [currentQuestion, setCurrentQuestion] = useState<Pergunta | null>(null);
   const [currentPlayerName, setCurrentPlayerName] = useState<string>("");
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [visible, setVisible] = useState(false);
-  const autoHideRef = useRef<number | null>(null);
-  const onResultShownRef = useRef(onResultShown);
-  onResultShownRef.current = onResultShown;
+  const [continuing, setContinuing] = useState(false);
+  const onAdvanceTurnRef = useRef(onAdvanceTurn);
+  const playersRef = useRef(players);
+  onAdvanceTurnRef.current = onAdvanceTurn;
+  playersRef.current = players;
 
-  const findPlayerName = useCallback((id: string) => {
-    return players.find((p) => p.id === id)?.nickname ?? "Jogador";
-  }, [players]);
+  const resetOverlay = () => {
+    setVisible(false);
+    setCurrentQuestion(null);
+    setRoundResult(null);
+    setDiceValue(null);
+    setCurrentPlayerName("");
+  };
+
+  const handleContinue = async () => {
+    if (!roundResult || continuing) return;
+
+    setContinuing(true);
+    resetOverlay();
+
+    try {
+      await onAdvanceTurnRef.current?.();
+    } finally {
+      setContinuing(false);
+    }
+  };
 
   useEffect(() => {
     const channel = gameSupabase
@@ -50,32 +69,24 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
           dado: number;
         };
         setCurrentQuestion(msg.pergunta);
-        setCurrentPlayerName(findPlayerName(msg.playerId));
+        setCurrentPlayerName(playersRef.current.find((p) => p.id === msg.playerId)?.nickname ?? "Jogador");
         setDiceValue(msg.dado);
         setRoundResult(null);
+        setContinuing(false);
         setVisible(true);
-        if (autoHideRef.current) clearTimeout(autoHideRef.current);
       })
       .on("broadcast", { event: "question_answered" }, (payload) => {
         const msg = payload.payload as RoundResult;
         setRoundResult(msg);
-
-        // Auto-hide after 3 seconds so admin can see the board animation
-        if (autoHideRef.current) clearTimeout(autoHideRef.current);
-        autoHideRef.current = window.setTimeout(() => {
-          setVisible(false);
-          setCurrentQuestion(null);
-          setRoundResult(null);
-          onResultShownRef.current?.();
-        }, 3000);
+        setVisible(true);
+        setContinuing(false);
       })
       .subscribe();
 
     return () => {
-      if (autoHideRef.current) clearTimeout(autoHideRef.current);
       gameSupabase.removeChannel(channel);
     };
-  }, [gameId, findPlayerName]);
+  }, [gameId]);
 
   if (!visible || !currentQuestion) return null;
 
@@ -128,13 +139,13 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
           ) : (
             <div className={`p-6 rounded-xl text-center space-y-2 animate-in zoom-in-95 duration-300 ${
               roundResult.acertou
-                ? "bg-green-500/10 border border-green-500/30"
+                ? "bg-accent/10 border border-accent/30"
                 : "bg-destructive/10 border border-destructive/30"
             }`}>
               {roundResult.acertou ? (
                 <>
-                  <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
-                  <p className="font-display font-bold text-2xl text-green-500">
+                  <CheckCircle2 className="w-12 h-12 text-accent mx-auto" />
+                  <p className="font-display font-bold text-2xl text-accent">
                     {roundResult.nickname} acertou! ✅
                   </p>
                   <p className="text-muted-foreground font-body">
@@ -155,9 +166,13 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
               {roundResult.evento && (
                 <p className="text-accent font-display font-bold mt-2">⚡ {roundResult.evento}</p>
               )}
-              <p className="text-xs text-muted-foreground font-body animate-pulse-slow mt-2">
-                Fechando em instantes...
-              </p>
+              <button
+                onClick={handleContinue}
+                disabled={continuing}
+                className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-6 py-3 font-display font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {continuing ? "Abrindo tabuleiro..." : "Próxima pergunta"}
+              </button>
             </div>
           )}
         </div>
