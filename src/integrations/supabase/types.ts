@@ -54,6 +54,7 @@ export type Database = {
       }
       jogos: {
         Row: {
+          categorias_selecionadas: string | null
           created_at: string
           id: string
           jogador_atual_id: string | null
@@ -62,6 +63,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          categorias_selecionadas?: string | null
           created_at?: string
           id?: string
           jogador_atual_id?: string | null
@@ -70,6 +72,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          categorias_selecionadas?: string | null
           created_at?: string
           id?: string
           jogador_atual_id?: string | null

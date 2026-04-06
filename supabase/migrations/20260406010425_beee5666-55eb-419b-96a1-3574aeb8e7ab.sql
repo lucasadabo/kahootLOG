@@ -1,0 +1,1 @@
+ALTER TABLE public.jogos ADD COLUMN categorias_selecionadas text DEFAULT NULL;
