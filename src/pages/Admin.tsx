@@ -31,9 +31,6 @@ export default function Admin() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [loadingCategories, setLoadingCategories] = useState(false);
 
-  // Show "next question" button after overlay auto-hides
-  const [showNextButton, setShowNextButton] = useState(false);
-
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
       .from("jogos")
@@ -187,6 +184,53 @@ export default function Admin() {
 
   const selectAllCategories = () => setSelectedCategories(new Set(categories));
 
+  const handleAdvanceTurn = useCallback(async () => {
+    if (!game) return;
+
+    const currentGameId = game.id;
+    const currentPlayerId = game.jogador_atual_id;
+
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+
+    if (game.status === "finalizado" || game.status === "finished") {
+      await fetchGame(currentGameId);
+      await fetchPlayers(currentGameId);
+      return;
+    }
+
+    const { error } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: currentGameId });
+    console.log("[Admin] proximo_turno RPC:", { error });
+
+    if (error) {
+      const { data: allPlayers } = await gameSupabase
+        .from("jogadores")
+        .select("id, pular_vez")
+        .eq("jogo_id", currentGameId)
+        .order("created_at", { ascending: true });
+
+      if (allPlayers && allPlayers.length > 0) {
+        const currentIdx = allPlayers.findIndex((p) => p.id === currentPlayerId);
+        let nextIdx = (currentIdx + 1) % allPlayers.length;
+        let attempts = 0;
+
+        while (attempts < allPlayers.length) {
+          if (allPlayers[nextIdx].pular_vez) {
+            await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", allPlayers[nextIdx].id);
+            nextIdx = (nextIdx + 1) % allPlayers.length;
+            attempts++;
+          } else {
+            break;
+          }
+        }
+
+        await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", currentGameId);
+      }
+    }
+
+    await fetchGame(currentGameId);
+    await fetchPlayers(currentGameId);
+  }, [game, fetchGame, fetchPlayers]);
+
   const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
   const winner = players.find((p) => p.posicao >= 42);
   const gameStatus = game?.status ?? "aguardando";
@@ -314,54 +358,13 @@ export default function Admin() {
           </div>
         )}
 
-        {/* "Next question" button that appears after overlay auto-hides */}
-        {showNextButton && (gameStatus === "em_andamento" || gameStatus === "playing") && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-in zoom-in-95 duration-300">
-            <button
-              onClick={async () => {
-                setShowNextButton(false);
-                const { error } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: game.id });
-                console.log("[Admin] proximo_turno RPC:", { error });
-                if (error) {
-                  // Manual fallback
-                  const { data: allPlayers } = await gameSupabase
-                    .from("jogadores")
-                    .select("id, pular_vez")
-                    .eq("jogo_id", game.id)
-                    .order("created_at", { ascending: true });
-                  if (allPlayers && allPlayers.length > 0) {
-                    const currentIdx = allPlayers.findIndex((p) => p.id === game.jogador_atual_id);
-                    let nextIdx = (currentIdx + 1) % allPlayers.length;
-                    let attempts = 0;
-                    while (attempts < allPlayers.length) {
-                      if (allPlayers[nextIdx].pular_vez) {
-                        await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", allPlayers[nextIdx].id);
-                        nextIdx = (nextIdx + 1) % allPlayers.length;
-                        attempts++;
-                      } else break;
-                    }
-                    await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", game.id);
-                  }
-                }
-                fetchGame(game.id);
-                fetchPlayers(game.id);
-              }}
-              className="inline-flex items-center gap-3 px-10 py-4 rounded-2xl bg-primary text-primary-foreground font-display font-bold text-xl hover:scale-[1.03] active:scale-[0.97] transition-all shadow-[var(--shadow-glow)]"
-            >
-              ▶ Próxima Pergunta
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Question overlay - auto-hides after result, then shows next button */}
+      {/* Question overlay */}
       <AdminQuestionOverlay
         gameId={game.id}
         players={players}
-        onResultShown={() => {
-          // After 3s auto-hide, show the "next question" button
-          setShowNextButton(true);
-        }}
+        onAdvanceTurn={handleAdvanceTurn}
       />
     </div>
   );
