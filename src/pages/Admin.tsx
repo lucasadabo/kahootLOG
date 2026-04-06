@@ -149,15 +149,9 @@ export default function Admin() {
     if (!game) return;
     setStarting(true);
     try {
-      // Broadcast selected categories to players
-      const broadcastChannel = gameSupabase.channel(`admin-broadcast-${game.id}`);
-      await broadcastChannel.subscribe();
-      await broadcastChannel.send({
-        type: "broadcast",
-        event: "game_categories",
-        payload: { categories: Array.from(selectedCategories) },
-      });
-      gameSupabase.removeChannel(broadcastChannel);
+      // Save selected categories to DB so players can read them
+      const catsJson = JSON.stringify(Array.from(selectedCategories));
+      await gameSupabase.from("jogos").update({ categorias_selecionadas: catsJson } as any).eq("id", game.id);
 
       const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;

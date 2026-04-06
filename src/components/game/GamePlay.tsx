@@ -101,16 +101,26 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   useEffect(() => {
     fetchGameState();
 
-    const broadcastChannel = gameSupabase.channel(`admin-broadcast-${gameId}`);
-    broadcastChannel
-      .on("broadcast", { event: "game_categories" }, (payload) => {
-        const cats = payload.payload?.categories as string[] | undefined;
-        if (cats && cats.length > 0) {
-          selectedCategoriesRef.current = cats;
-          console.log("[GamePlay] received categories:", cats);
+    // Load selected categories from DB
+    gameSupabase
+      .from("jogos")
+      .select("categorias_selecionadas")
+      .eq("id", gameId)
+      .single()
+      .then(({ data }) => {
+        if (data && (data as any).categorias_selecionadas) {
+          try {
+            const cats = JSON.parse((data as any).categorias_selecionadas);
+            if (Array.isArray(cats) && cats.length > 0) {
+              selectedCategoriesRef.current = cats;
+              console.log("[GamePlay] loaded categories from DB:", cats);
+            }
+          } catch {}
         }
-      })
-      .subscribe();
+      });
+
+    const broadcastChannel = gameSupabase.channel(`admin-overlay-${gameId}`);
+    broadcastChannel.subscribe();
     broadcastChannelRef.current = broadcastChannel;
 
     const channel = gameSupabase

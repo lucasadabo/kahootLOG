@@ -33,6 +33,8 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [visible, setVisible] = useState(false);
   const autoHideRef = useRef<number | null>(null);
+  const onResultShownRef = useRef(onResultShown);
+  onResultShownRef.current = onResultShown;
 
   const findPlayerName = useCallback((id: string) => {
     return players.find((p) => p.id === id)?.nickname ?? "Jogador";
@@ -40,7 +42,7 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
 
   useEffect(() => {
     const channel = gameSupabase
-      .channel(`admin-broadcast-${gameId}`)
+      .channel(`admin-overlay-${gameId}`)
       .on("broadcast", { event: "question_started" }, (payload) => {
         const msg = payload.payload as {
           playerId: string;
@@ -64,7 +66,7 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
           setVisible(false);
           setCurrentQuestion(null);
           setRoundResult(null);
-          onResultShown?.();
+          onResultShownRef.current?.();
         }, 3000);
       })
       .subscribe();
@@ -73,7 +75,7 @@ export function AdminQuestionOverlay({ gameId, players, onResultShown }: AdminQu
       if (autoHideRef.current) clearTimeout(autoHideRef.current);
       gameSupabase.removeChannel(channel);
     };
-  }, [gameId, findPlayerName, onResultShown]);
+  }, [gameId, findPlayerName]);
 
   if (!visible || !currentQuestion) return null;
 
