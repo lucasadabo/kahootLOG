@@ -45,35 +45,30 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const broadcastChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
   const prevCurrentPlayerRef = useRef<string | null>(null);
 
-  // Track used question IDs to avoid repetition
   const usedQuestionIdsRef = useRef<Set<string>>(new Set());
-  // Selected categories from admin
   const selectedCategoriesRef = useRef<string[]>([]);
 
   const isMyTurn = currentPlayerId === playerId;
 
-  // Reset phase when turn changes
+  // Reset phase when turn changes to this player
   useEffect(() => {
     if (prevCurrentPlayerRef.current !== currentPlayerId && currentPlayerId !== null) {
+      // Always reset UI when turn changes
+      setDiceValue(null);
+      setPergunta(null);
+      setSelectedAnswer(null);
+      setEventMessage(null);
+      setErrorMessage(null);
+      setResultMessage("");
+
       if (currentPlayerId === playerId) {
         setPhase("waiting");
-        setDiceValue(null);
-        setPergunta(null);
-        setSelectedAnswer(null);
-        setEventMessage(null);
-        setErrorMessage(null);
-        setResultMessage("");
-      } else if (phase === "result") {
+      } else {
         setPhase("waiting");
-        setDiceValue(null);
-        setPergunta(null);
-        setSelectedAnswer(null);
-        setResultMessage("");
-        setEventMessage(null);
       }
     }
     prevCurrentPlayerRef.current = currentPlayerId;
-  }, [currentPlayerId, playerId, phase]);
+  }, [currentPlayerId, playerId]);
 
   const fetchGameState = useCallback(async () => {
     const { data: jogoData, error: jogoError } = await gameSupabase
@@ -133,7 +128,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       })
       .subscribe();
 
-    // Polling fallback every 2s
     const pollInterval = window.setInterval(() => {
       fetchGameState();
     }, 2000);
@@ -148,7 +142,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const fetchQuestion = async (rolledValue: number) => {
     try {
-      // Build query filtering by categories and excluding used questions
       let query = gameSupabase.from("perguntas").select("*");
       
       const cats = selectedCategoriesRef.current;
@@ -161,11 +154,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         query = query.not("id", "in", `(${usedIds.join(",")})`);
       }
 
-      const { data, error } = await query;
-
+      const { data } = await query;
       let questions = data;
 
-      // If no unused questions left, reset and fetch all
+      // If no unused questions left, reset pool
       if (!questions || questions.length === 0) {
         usedQuestionIdsRef.current.clear();
         let resetQuery = gameSupabase.from("perguntas").select("*");
@@ -183,21 +175,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         return;
       }
 
-      // Pick random question
       const randomQ = questions[Math.floor(Math.random() * questions.length)];
       usedQuestionIdsRef.current.add(randomQ.id);
 
       const perguntaObj: Pergunta = {
         id: String(randomQ.id),
-        texto: String(randomQ.pergunta ?? randomQ.texto),
+        texto: String(randomQ.texto),
         alternativa_a: String(randomQ.alternativa_a),
         alternativa_b: String(randomQ.alternativa_b),
         alternativa_c: String(randomQ.alternativa_c),
         alternativa_d: String(randomQ.alternativa_d),
-        resposta_correta: String(randomQ.correta ?? randomQ.resposta_correta),
+        resposta_correta: String(randomQ.resposta_correta),
       };
 
-      console.log("[GamePlay] pergunta selecionada:", perguntaObj.id, "usadas:", usedQuestionIdsRef.current.size);
+      console.log("[GamePlay] pergunta selecionada:", perguntaObj.id, "categoria:", randomQ.categoria, "usadas:", usedQuestionIdsRef.current.size);
 
       rollTimeoutRef.current = window.setTimeout(() => {
         setPergunta(perguntaObj);
