@@ -50,24 +50,26 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const isMyTurn = currentPlayerId === playerId;
 
+  // Track a turn counter to detect turn advances even for single player
+  const turnCounterRef = useRef(0);
+
   // Reset phase when turn changes to this player
+  // For single-player: we watch for game state updates that signal a new turn
   useEffect(() => {
-    if (prevCurrentPlayerRef.current !== currentPlayerId && currentPlayerId !== null) {
-      // Always reset UI when turn changes
+    if (currentPlayerId === null) return;
+    
+    const turnChanged = prevCurrentPlayerRef.current !== currentPlayerId;
+    prevCurrentPlayerRef.current = currentPlayerId;
+
+    if (turnChanged) {
       setDiceValue(null);
       setPergunta(null);
       setSelectedAnswer(null);
       setEventMessage(null);
       setErrorMessage(null);
       setResultMessage("");
-
-      if (currentPlayerId === playerId) {
-        setPhase("waiting");
-      } else {
-        setPhase("waiting");
-      }
+      setPhase("waiting");
     }
-    prevCurrentPlayerRef.current = currentPlayerId;
   }, [currentPlayerId, playerId]);
 
   const fetchGameState = useCallback(async () => {
