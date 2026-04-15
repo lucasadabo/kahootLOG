@@ -116,7 +116,19 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         }
       });
 
-    const broadcastChannel = gameSupabase.channel(`admin-overlay-${gameId}`);
+    const broadcastChannel = gameSupabase.channel(`admin-overlay-${gameId}`)
+      .on("broadcast", { event: "turn_advanced" }, () => {
+        console.log("[GamePlay] turn_advanced received, resetting phase");
+        // Force reset for single-player scenario
+        setDiceValue(null);
+        setPergunta(null);
+        setSelectedAnswer(null);
+        setEventMessage(null);
+        setErrorMessage(null);
+        setResultMessage("");
+        setPhase("waiting");
+        fetchGameState();
+      });
     broadcastChannel.subscribe();
     broadcastChannelRef.current = broadcastChannel;
 
