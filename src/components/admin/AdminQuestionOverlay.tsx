@@ -93,27 +93,31 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     if (!roundResult || continuing) return;
     setContinuing(true);
 
+    const broadcastTurnAdvanced = () => {
+      const ch = gameSupabase.channel(`admin-overlay-${gameId}`);
+      ch.send({ type: "broadcast", event: "turn_advanced", payload: {} });
+    };
+
     if (roundResult.acertou) {
-      // Play sound, hide overlay to show movement, then advance turn
       playMovementSound();
       setVisible(false);
       setShowingMovement(true);
 
-      // Wait for animation to play on the board
       await new Promise(r => setTimeout(r, 3000));
 
       setShowingMovement(false);
       resetOverlay();
       try {
         await onAdvanceTurnRef.current?.();
+        broadcastTurnAdvanced();
       } finally {
         setContinuing(false);
       }
     } else {
-      // Wrong answer: just advance immediately
       resetOverlay();
       try {
         await onAdvanceTurnRef.current?.();
+        broadcastTurnAdvanced();
       } finally {
         setContinuing(false);
       }
