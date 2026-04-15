@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Monitor, Play, Plus, Copy, Check, Trophy, Zap } from "lucide-react";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Zap, Lock } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
@@ -19,17 +19,21 @@ interface Game {
   jogador_atual_id: string | null;
 }
 
+const ADMIN_PASSWORD = "teste123";
+
 export default function Admin() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
+
   const [game, setGame] = useState<Game | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [creating, setCreating] = useState(false);
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Category selection
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
-  const [loadingCategories, setLoadingCategories] = useState(false);
 
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
@@ -58,24 +62,19 @@ export default function Admin() {
     }
   }, []);
 
-  // Fetch unique categories from perguntas table
   const fetchCategories = useCallback(async () => {
-    setLoadingCategories(true);
     try {
       const { data, error } = await gameSupabase
         .from("perguntas")
         .select("categoria");
 
       if (!error && data) {
-        const unique = [...new Set(data.map((r: { categoria: string }) => r.categoria).filter(Boolean))];
+        const unique = [...new Set(data.map((r: any) => r.categoria).filter(Boolean))];
         setCategories(unique.sort());
-        // Select all by default
         setSelectedCategories(new Set(unique));
       }
     } catch (err) {
       console.error("[Admin] Erro ao buscar categorias:", err);
-    } finally {
-      setLoadingCategories(false);
     }
   }, []);
 
@@ -113,6 +112,15 @@ export default function Admin() {
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
+  const handlePasswordSubmit = () => {
+    if (passwordInput === ADMIN_PASSWORD) {
+      setAuthenticated(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
+
   const handleCreateGame = async () => {
     setCreating(true);
     try {
@@ -133,7 +141,6 @@ export default function Admin() {
         jogador_atual_id: jogoData.jogador_atual_id ?? null,
       });
       setPlayers([]);
-      // Fetch categories after creating game
       fetchCategories();
     } catch (err) {
       console.error("[Admin] Erro ao criar jogo:", err);
@@ -146,7 +153,6 @@ export default function Admin() {
     if (!game) return;
     setStarting(true);
     try {
-      // Save selected categories to DB so players can read them
       const catsJson = JSON.stringify(Array.from(selectedCategories));
       await gameSupabase.from("jogos").update({ categorias_selecionadas: catsJson } as any).eq("id", game.id);
 
@@ -172,7 +178,6 @@ export default function Admin() {
     setSelectedCategories(prev => {
       const next = new Set(prev);
       if (next.has(cat)) {
-        // Don't allow deselecting all
         if (next.size <= 1) return prev;
         next.delete(cat);
       } else {
@@ -234,6 +239,40 @@ export default function Admin() {
   const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
   const winner = players.find((p) => p.posicao >= 42);
   const gameStatus = game?.status ?? "aguardando";
+
+  // Password gate
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20">
+            <Lock className="w-10 h-10 text-primary" />
+          </div>
+          <h1 className="text-3xl font-display font-bold text-primary text-glow">Painel do Professor</h1>
+          <p className="text-muted-foreground font-body">Digite a senha para acessar</p>
+          <div className="space-y-3">
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }}
+              onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
+              placeholder="Senha"
+              className="w-full h-14 px-4 rounded-xl bg-card border-2 border-border text-foreground font-body text-lg text-center tracking-widest focus:border-primary focus:outline-none transition-colors"
+            />
+            {passwordError && (
+              <p className="text-destructive font-body text-sm">Senha incorreta. Tente novamente.</p>
+            )}
+            <button
+              onClick={handlePasswordSubmit}
+              className="w-full h-14 rounded-xl bg-primary text-primary-foreground font-display font-bold text-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              Entrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!game) {
     return (
@@ -327,12 +366,9 @@ export default function Admin() {
 
         {/* Main content: Board + Players side by side */}
         <div className="flex gap-4">
-          {/* Board - takes most of the space */}
           <div className="flex-1 min-w-0">
             <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
           </div>
-
-          {/* Players panel - right side */}
           <div className="w-72 shrink-0">
             <AdminPlayersPanel
               players={players}
@@ -357,7 +393,6 @@ export default function Admin() {
             </button>
           </div>
         )}
-
       </div>
 
       {/* Question overlay */}

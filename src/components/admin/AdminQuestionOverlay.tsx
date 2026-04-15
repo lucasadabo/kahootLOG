@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { HelpCircle, CheckCircle2, XCircle } from "lucide-react";
 import { gameSupabase } from "@/lib/gameSupabase";
 
@@ -26,6 +26,46 @@ interface AdminQuestionOverlayProps {
   onAdvanceTurn?: () => Promise<void> | void;
 }
 
+// Sound effect for forklift movement
+function playMovementSound() {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const duration = 2.5;
+    
+    // Engine rumble
+    const osc1 = audioCtx.createOscillator();
+    osc1.type = "sawtooth";
+    osc1.frequency.setValueAtTime(55, audioCtx.currentTime);
+    osc1.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + duration);
+    
+    const gain1 = audioCtx.createGain();
+    gain1.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain1.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + duration);
+    gain1.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration + 0.3);
+    
+    osc1.connect(gain1).connect(audioCtx.destination);
+    osc1.start();
+    osc1.stop(audioCtx.currentTime + duration + 0.3);
+    
+    // Success chime
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(523, audioCtx.currentTime);
+    osc2.frequency.setValueAtTime(659, audioCtx.currentTime + 0.15);
+    osc2.frequency.setValueAtTime(784, audioCtx.currentTime + 0.3);
+    
+    const gain2 = audioCtx.createGain();
+    gain2.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain2.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.6);
+    
+    osc2.connect(gain2).connect(audioCtx.destination);
+    osc2.start();
+    osc2.stop(audioCtx.currentTime + 0.6);
+  } catch (e) {
+    // Audio not supported
+  }
+}
+
 export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQuestionOverlayProps) {
   const [currentQuestion, setCurrentQuestion] = useState<Pergunta | null>(null);
   const [currentPlayerName, setCurrentPlayerName] = useState<string>("");
@@ -33,29 +73,54 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [visible, setVisible] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  const [showingMovement, setShowingMovement] = useState(false);
+
   const onAdvanceTurnRef = useRef(onAdvanceTurn);
   const playersRef = useRef(players);
   onAdvanceTurnRef.current = onAdvanceTurn;
   playersRef.current = players;
 
-  const resetOverlay = () => {
+  const resetOverlay = useCallback(() => {
     setVisible(false);
     setCurrentQuestion(null);
     setRoundResult(null);
     setDiceValue(null);
     setCurrentPlayerName("");
-  };
+    setShowingMovement(false);
+  }, []);
 
   const handleContinue = async () => {
     if (!roundResult || continuing) return;
-
     setContinuing(true);
-    resetOverlay();
 
-    try {
-      await onAdvanceTurnRef.current?.();
-    } finally {
-      setContinuing(false);
+    const broadcastTurnAdvanced = () => {
+      const ch = gameSupabase.channel(`admin-overlay-${gameId}`);
+      ch.send({ type: "broadcast", event: "turn_advanced", payload: {} });
+    };
+
+    if (roundResult.acertou) {
+      playMovementSound();
+      setVisible(false);
+      setShowingMovement(true);
+
+      await new Promise(r => setTimeout(r, 3000));
+
+      setShowingMovement(false);
+      resetOverlay();
+      try {
+        await onAdvanceTurnRef.current?.();
+        broadcastTurnAdvanced();
+      } finally {
+        setContinuing(false);
+      }
+    } else {
+      resetOverlay();
+      try {
+        await onAdvanceTurnRef.current?.();
+        broadcastTurnAdvanced();
+      } finally {
+        setContinuing(false);
+      }
     }
   };
 
@@ -73,6 +138,7 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
         setDiceValue(msg.dado);
         setRoundResult(null);
         setContinuing(false);
+        setShowingMovement(false);
         setVisible(true);
       })
       .on("broadcast", { event: "question_answered" }, (payload) => {
@@ -171,7 +237,7 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
                 disabled={continuing}
                 className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-6 py-3 font-display font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {continuing ? "Abrindo tabuleiro..." : "Próxima pergunta"}
+                {continuing ? "Movendo empilhadeira..." : "Próxima pergunta"}
               </button>
             </div>
           )}

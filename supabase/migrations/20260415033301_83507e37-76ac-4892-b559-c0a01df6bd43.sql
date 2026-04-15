@@ -1,0 +1,1 @@
+ALTER TABLE public.perguntas ADD COLUMN categoria text NOT NULL DEFAULT 'Geral';

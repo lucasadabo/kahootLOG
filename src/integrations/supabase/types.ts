@@ -96,6 +96,7 @@ export type Database = {
           alternativa_b: string
           alternativa_c: string
           alternativa_d: string
+          categoria: string
           created_at: string
           id: string
           resposta_correta: string
@@ -106,6 +107,7 @@ export type Database = {
           alternativa_b: string
           alternativa_c: string
           alternativa_d: string
+          categoria?: string
           created_at?: string
           id?: string
           resposta_correta: string
@@ -116,6 +118,7 @@ export type Database = {
           alternativa_b?: string
           alternativa_c?: string
           alternativa_d?: string
+          categoria?: string
           created_at?: string
           id?: string
           resposta_correta?: string

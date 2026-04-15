@@ -1,6 +1,6 @@
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 interface Player {
@@ -11,14 +11,8 @@ interface Player {
 }
 
 const FORKLIFT_COLORS = [
-  "#ef4444",
-  "#3b82f6",
-  "#22c55e",
-  "#f59e0b",
-  "#a855f7",
-  "#ec4899",
-  "#14b8a6",
-  "#e11d48",
+  "#ef4444", "#3b82f6", "#22c55e", "#f59e0b",
+  "#a855f7", "#ec4899", "#14b8a6", "#e11d48",
 ];
 
 interface WarehouseBoard3DProps {
@@ -33,12 +27,11 @@ const GAP = 0.12;
 const STEP_X = CELL_W + GAP;
 const STEP_Z = CELL_D + GAP;
 
-// Row definitions: cells per row and direction
 const ROWS = [
-  { count: 10, dir: 1 },   // row 0: 1-10 L→R
-  { count: 10, dir: -1 },  // row 1: 11-20 R→L
-  { count: 10, dir: 1 },   // row 2: 21-30 L→R
-  { count: 12, dir: -1 },  // row 3: 31-42 R→L
+  { count: 10, dir: 1 },
+  { count: 10, dir: -1 },
+  { count: 10, dir: 1 },
+  { count: 12, dir: -1 },
 ];
 
 function getCellRowCol(index: number): { row: number; col: number; colCount: number } {
@@ -55,7 +48,6 @@ function getCellRowCol(index: number): { row: number; col: number; colCount: num
 function getCellPosition(index: number): THREE.Vector3 {
   const { row, col, colCount } = getCellRowCol(index);
   const rowDef = ROWS[row];
-
   const maxCols = 12;
   const totalWidth = (maxCols - 1) * STEP_X;
   const rowWidth = (colCount - 1) * STEP_X;
@@ -69,7 +61,6 @@ function getCellPosition(index: number): THREE.Vector3 {
   }
 
   const z = (ROWS.length - 1) * STEP_Z / 2 - row * STEP_Z;
-
   return new THREE.Vector3(x, 0.06, z);
 }
 
@@ -84,11 +75,9 @@ function getForkliftPosition(position: number, stackIndex: number, totalAtPositi
   const base = getCellPosition(Math.min(position, CELL_COUNT) - 1);
   const offsetX = (stackIndex % 3 - 1) * 0.55;
   const offsetZ = Math.floor(stackIndex / 3) * 0.55;
-
   return new THREE.Vector3(base.x + offsetX, 0.15, base.z + offsetZ);
 }
 
-// Hazard stripe texture for DESAFIO cells
 function HazardCell({ position }: { position: THREE.Vector3 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const texture = useMemo(() => {
@@ -120,7 +109,6 @@ function HazardCell({ position }: { position: THREE.Vector3 }) {
   );
 }
 
-// Checkered finish texture
 function FinishCell({ position }: { position: THREE.Vector3 }) {
   const texture = useMemo(() => {
     const canvas = document.createElement("canvas");
@@ -134,8 +122,7 @@ function FinishCell({ position }: { position: THREE.Vector3 }) {
         ctx.fillRect(x, y, size, size);
       }
     }
-    const tex = new THREE.CanvasTexture(canvas);
-    return tex;
+    return new THREE.CanvasTexture(canvas);
   }, []);
 
   return (
@@ -153,6 +140,9 @@ function FinishCell({ position }: { position: THREE.Vector3 }) {
 
 function ForkliftPawn({ color, label, active, position }: { color: string; label: string; active: boolean; position: THREE.Vector3 }) {
   const groupRef = useRef<THREE.Group>(null);
+  const [isMoving, setIsMoving] = useState(false);
+  const prevPos = useRef(position.clone());
+  const spotlightRef = useRef<THREE.SpotLight>(null);
 
   useEffect(() => {
     if (groupRef.current) {
@@ -162,11 +152,49 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-    groupRef.current.position.lerp(position, 1 - Math.exp(-4 * delta));
+    const current = groupRef.current.position;
+    const dist = current.distanceTo(position);
+    
+    if (dist > 0.05) {
+      setIsMoving(true);
+      current.lerp(position, 1 - Math.exp(-3 * delta));
+    } else {
+      if (isMoving) setIsMoving(false);
+      current.lerp(position, 1 - Math.exp(-4 * delta));
+    }
+
+    // Update spotlight target
+    if (spotlightRef.current) {
+      spotlightRef.current.target.position.set(current.x, 0, current.z);
+      spotlightRef.current.target.updateMatrixWorld();
+    }
   });
+
+  const showSpotlight = active || isMoving;
 
   return (
     <group ref={groupRef}>
+      {/* Spotlight beam on active/moving forklift */}
+      {showSpotlight && (
+        <>
+          <spotLight
+            ref={spotlightRef}
+            position={[0, 6, 0]}
+            angle={0.35}
+            penumbra={0.5}
+            intensity={3}
+            color="#facc15"
+            castShadow
+            distance={12}
+          />
+          {/* Ground glow circle */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <circleGeometry args={[0.8, 32]} />
+            <meshBasicMaterial color="#facc15" transparent opacity={isMoving ? 0.3 : 0.15} />
+          </mesh>
+        </>
+      )}
+
       {active && (
         <mesh position={[0, 1.3, 0]}>
           <sphereGeometry args={[0.12, 24, 24]} />
@@ -177,7 +205,7 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
       {/* Body */}
       <mesh castShadow receiveShadow position={[0, 0.32, 0]}>
         <boxGeometry args={[0.75, 0.35, 0.52]} />
-        <meshStandardMaterial color={color} metalness={0.5} roughness={0.35} emissive={color} emissiveIntensity={0.15} />
+        <meshStandardMaterial color={color} metalness={0.5} roughness={0.35} emissive={color} emissiveIntensity={isMoving ? 0.4 : 0.15} />
       </mesh>
 
       {/* Cabin */}
@@ -226,26 +254,22 @@ function ForkliftPawn({ color, label, active, position }: { color: string; label
   );
 }
 
-// Warehouse rack with boxes
 function Rack({ position, side }: { position: [number, number, number]; side: "left" | "right" }) {
   const flip = side === "left" ? -1 : 1;
   return (
     <group position={position}>
-      {/* Uprights - orange */}
       {[-0.55, 0.55].map((z, i) => (
         <mesh key={i} castShadow position={[0, 1.5, z]}>
           <boxGeometry args={[0.08, 3, 0.08]} />
           <meshStandardMaterial color="#ea580c" metalness={0.4} roughness={0.5} />
         </mesh>
       ))}
-      {/* Shelves */}
       {[0.5, 1.2, 1.9, 2.6].map((y, i) => (
         <mesh key={i} castShadow receiveShadow position={[flip * 0.15, y, 0]}>
           <boxGeometry args={[0.6, 0.06, 1.2]} />
           <meshStandardMaterial color="#78716c" metalness={0.3} roughness={0.6} />
         </mesh>
       ))}
-      {/* Boxes */}
       {[
         { pos: [flip * 0.15, 0.7, -0.25] as [number, number, number], color: "#a16207", size: [0.4, 0.35, 0.35] as [number, number, number] },
         { pos: [flip * 0.15, 0.7, 0.25] as [number, number, number], color: "#92400e", size: [0.35, 0.3, 0.35] as [number, number, number] },
@@ -287,29 +311,20 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
       <fog attach="fog" args={["#1a1510", 18, 38]} />
 
       <ambientLight intensity={0.8} />
-      <directionalLight
-        castShadow
-        intensity={1.8}
-        position={[6, 16, 8]}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-      />
+      <directionalLight castShadow intensity={1.8} position={[6, 16, 8]} shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
       <spotLight position={[-8, 12, 4]} angle={0.5} intensity={0.8} penumbra={0.6} color="#fde68a" />
       <spotLight position={[8, 12, -2]} angle={0.5} intensity={0.6} penumbra={0.6} color="#fef3c7" />
 
-      {/* Warehouse floor */}
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
         <planeGeometry args={[24, 16]} />
         <meshStandardMaterial color="#78716c" roughness={0.95} />
       </mesh>
 
-      {/* Board area - concrete */}
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
         <planeGeometry args={[19, 8]} />
         <meshStandardMaterial color="#a8a29e" roughness={0.9} />
       </mesh>
 
-      {/* Warehouse racks on both sides */}
       {Array.from({ length: 6 }).map((_, i) => (
         <Rack key={`left-${i}`} position={[-10.5, 0, 3.5 - i * 1.8]} side="left" />
       ))}
@@ -328,7 +343,6 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
         </Text>
       </group>
 
-      {/* Board cells */}
       {cells.map((cell) => {
         if (cell.number === 42) {
           return <FinishCell key={cell.number} position={cell.position} />;
@@ -364,7 +378,6 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
           );
         }
 
-        // Alternate gold and dark gray
         const isGold = cell.number % 2 === 1;
         const cellColor = isGold ? "#b59532" : "#3f3f46";
         const textColor = isGold ? "#1a1510" : "#e7e5e4";
@@ -390,7 +403,6 @@ function WarehouseScene({ players, currentPlayerId }: WarehouseBoard3DProps) {
         );
       })}
 
-      {/* Forklift pawns */}
       {Array.from(playersByPosition.entries()).flatMap(([position, positionPlayers]) =>
         positionPlayers.map((player, index) => {
           const playerGlobalIndex = players.findIndex(p => p.id === player.id);
