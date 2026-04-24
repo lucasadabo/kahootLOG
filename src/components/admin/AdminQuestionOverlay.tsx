@@ -18,6 +18,10 @@ interface RoundResult {
   evento: string | null;
   dado: number;
   nickname: string;
+  playerId: string;
+  questionId: string;
+  skipNextTurn: boolean;
+  venceu: boolean;
   timeout?: boolean;
 }
 
@@ -101,29 +105,115 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     stopTimer();
   }, [stopTimer]);
 
+  const persistRound = useCallback(async (result: RoundResult) => {
+    if (result.skipNextTurn) {
+      const { error: skipError } = await gameSupabase
+        .from("jogadores")
+        .update({ pular_vez: true })
+        .eq("id", result.playerId);
+
+      console.log("[AdminOverlay] update pular_vez:", { playerId: result.playerId, error: skipError });
+
+      if (!skipError) {
+        const { data: skipCheck, error: skipCheckError } = await gameSupabase
+          .from("jogadores")
+          .select("pular_vez")
+          .eq("id", result.playerId)
+          .single();
+        console.log("[AdminOverlay] verify pular_vez:", { data: skipCheck, error: skipCheckError });
+      }
+    }
+
+    const { error: updateError } = await gameSupabase
+      .from("jogadores")
+      .update({ posicao: result.posicao_depois })
+      .eq("id", result.playerId);
+
+    console.log("[AdminOverlay] update posicao jogador:", {
+      playerId: result.playerId,
+      posicao: result.posicao_depois,
+      error: updateError,
+    });
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    const { data: playerCheck, error: playerCheckError } = await gameSupabase
+      .from("jogadores")
+      .select("posicao")
+      .eq("id", result.playerId)
+      .single();
+    console.log("[AdminOverlay] verify posicao jogador:", { data: playerCheck, error: playerCheckError });
+
+    const { error: rodadaError } = await gameSupabase.from("rodadas").insert({
+      jogo_id: gameId,
+      jogador_id: result.playerId,
+      pergunta_id: result.questionId,
+      dado: result.dado,
+      acertou: result.acertou,
+      posicao_antes: result.posicao_antes,
+      posicao_depois: result.posicao_depois,
+      evento: result.evento,
+    });
+
+    console.log("[AdminOverlay] insert rodada:", { playerId: result.playerId, error: rodadaError });
+
+    if (!rodadaError) {
+      const { data: rodadaCheck, error: rodadaCheckError } = await gameSupabase
+        .from("rodadas")
+        .select("id, jogador_id, posicao_antes, posicao_depois")
+        .eq("jogador_id", result.playerId)
+        .eq("pergunta_id", result.questionId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      console.log("[AdminOverlay] verify rodada:", { data: rodadaCheck, error: rodadaCheckError });
+    }
+
+    if (result.venceu) {
+      const { error: gameError } = await gameSupabase
+        .from("jogos")
+        .update({ status: "finalizado" })
+        .eq("id", gameId);
+
+      console.log("[AdminOverlay] update jogo finalizado:", { gameId, error: gameError });
+
+      if (!gameError) {
+        const { data: gameCheck, error: gameCheckError } = await gameSupabase
+          .from("jogos")
+          .select("status")
+          .eq("id", gameId)
+          .single();
+        console.log("[AdminOverlay] verify jogo finalizado:", { data: gameCheck, error: gameCheckError });
+      }
+    }
+  }, [gameId]);
+
   const handleContinue = async () => {
     if (!roundResult || continuing) return;
     setContinuing(true);
+    const result = roundResult;
 
     const broadcastTurnAdvanced = () => {
       const ch = gameSupabase.channel(`admin-overlay-${gameId}`);
       ch.send({ type: "broadcast", event: "turn_advanced", payload: {} });
     };
 
-    // Close overlay IMMEDIATELY so the forklift movement is visible on the board
-    const wasCorrect = roundResult.acertou;
-    resetOverlay();
-
-    if (wasCorrect) {
-      // Play engine sound synchronously with the forklift moving on the board
-      playMovementSound();
-      // Wait for the visual movement to play out before advancing turn
-      await new Promise((r) => setTimeout(r, 2500));
-    }
-
     try {
+      resetOverlay();
+
+      await persistRound(result);
+
+      const shouldAnimateMovement = result.acertou && result.posicao_depois > result.posicao_antes;
+      if (shouldAnimateMovement) {
+        playMovementSound();
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+
       await onAdvanceTurnRef.current?.();
       broadcastTurnAdvanced();
+    } catch (error) {
+      console.error("[AdminOverlay] erro ao concluir rodada:", error);
     } finally {
       setContinuing(false);
     }
