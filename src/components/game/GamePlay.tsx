@@ -238,13 +238,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       rollTimeoutRef.current = window.setTimeout(() => {
         setPergunta(perguntaObj);
         setPhase("question");
+        answeredRef.current = false;
 
+        const tempo = tempoRespostaRef.current;
         broadcastChannelRef.current?.send({
           type: "broadcast",
           event: "question_started",
           payload: {
             playerId,
             dado: rolledValue,
+            tempo,
             pergunta: {
               id: perguntaObj.id,
               texto: perguntaObj.texto,
@@ -255,6 +258,27 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
             },
           },
         });
+
+        // Start countdown timer if configured
+        if (tempo > 0) {
+          setTempoRestante(tempo);
+          timerIntervalRef.current = window.setInterval(() => {
+            setTempoRestante((prev) => {
+              if (prev === null) return null;
+              if (prev <= 1) {
+                window.clearInterval(timerIntervalRef.current!);
+                timerIntervalRef.current = null;
+                // Auto-fail when timer expires
+                if (!answeredRef.current) {
+                  answeredRef.current = true;
+                  handleAnswer("__timeout__");
+                }
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
       }, 1800);
     } catch (err) {
       console.error("[GamePlay] erro ao buscar pergunta:", err);
