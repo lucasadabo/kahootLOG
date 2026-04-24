@@ -158,6 +158,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         setErrorMessage(null);
         setResultMessage("");
         setPhase("waiting");
+        stopTimer();
+        answeredRef.current = false;
         fetchGameState();
       });
     broadcastChannel.subscribe();
