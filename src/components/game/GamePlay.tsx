@@ -313,7 +313,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    await gameSupabase.from("rodadas").insert({
+    const { error: rodadaError } = await gameSupabase.from("rodadas").insert({
       jogo_id: gameId,
       jogador_id: playerId,
       pergunta_id: pergunta.id,
@@ -323,6 +323,11 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       posicao_depois: novaPosicao,
       evento,
     });
+    if (rodadaError) {
+      console.error("[GamePlay] erro ao inserir rodada:", rodadaError);
+    } else {
+      console.log("[GamePlay] rodada inserida com sucesso");
+    }
 
     const venceu = novaPosicao >= 42;
     if (venceu) {
