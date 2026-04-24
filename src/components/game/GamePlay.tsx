@@ -473,6 +473,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
         {phase === "question" && pergunta && (
           <div className="space-y-4 animate-bounce-in">
+            {tempoRestante !== null && (
+              <div className={`p-4 rounded-xl border-2 text-center transition-colors ${
+                tempoRestante <= 10
+                  ? "bg-destructive/10 border-destructive/50 animate-pulse"
+                  : "bg-accent/10 border-accent/30"
+              }`}>
+                <p className="font-display font-bold text-3xl text-foreground flex items-center justify-center gap-2">
+                  <Clock className={`w-7 h-7 ${tempoRestante <= 10 ? "text-destructive" : "text-accent"}`} />
+                  {tempoRestante}s
+                </p>
+              </div>
+            )}
             <div className="p-4 rounded-xl bg-card border border-border">
               <p className="font-display font-bold text-lg text-foreground text-center">{pergunta.texto}</p>
             </div>
@@ -483,7 +495,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
                   <button
                     key={letter}
                     onClick={() => handleAnswer(letter)}
-                    disabled={!!selectedAnswer}
+                    disabled={!!selectedAnswer || answeredRef.current}
                     className="p-4 rounded-xl bg-card border-2 border-border text-left font-body text-foreground hover:border-primary hover:bg-primary/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="font-display font-bold text-primary mr-2">{letter})</span>
