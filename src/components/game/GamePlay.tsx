@@ -317,7 +317,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const handleAnswer = async (answer: string) => {
     if (!pergunta || !diceValue) return;
-    setSelectedAnswer(answer);
+    if (answeredRef.current && answer !== "__timeout__") return;
+    answeredRef.current = true;
+    stopTimer();
+
+    const isTimeout = answer === "__timeout__";
+    setSelectedAnswer(isTimeout ? null : answer);
     setErrorMessage(null);
 
     const { data: playerBefore, error: playerBeforeError } = await gameSupabase
@@ -333,7 +338,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const posicaoAntes = playerBefore.posicao;
     const respostaCorreta = pergunta.resposta_correta;
-    const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
+    const acertou = !isTimeout && respostaCorreta.toUpperCase() === answer.toUpperCase();
 
     let novaPosicao = acertou ? posicaoAntes + diceValue : posicaoAntes;
     let evento: string | null = null;
