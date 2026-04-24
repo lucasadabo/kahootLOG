@@ -386,14 +386,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setResultMessage(
       acertou
         ? `✅ Correto! Você saiu da casa ${posicaoAntes} e foi para a ${novaPosicao}`
-        : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
+        : isTimeout
+          ? `⏱️ Tempo esgotado! Você permaneceu na casa ${posicaoAntes}`
+          : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
     );
     setEventMessage(evento);
 
     broadcastChannelRef.current?.send({
       type: "broadcast",
       event: "question_answered",
-      payload: { acertou, posicao_antes: posicaoAntes, posicao_depois: novaPosicao, evento, dado: diceValue, nickname },
+      payload: { acertou, posicao_antes: posicaoAntes, posicao_depois: novaPosicao, evento, dado: diceValue, nickname, timeout: isTimeout },
     });
 
     if (venceu) setGameStatus("finalizado");
