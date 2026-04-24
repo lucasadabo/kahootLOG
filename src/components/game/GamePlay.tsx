@@ -60,6 +60,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const usedQuestionIdsRef = useRef<Set<string>>(new Set());
   const selectedCategoriesRef = useRef<string[]>([]);
+  const tempoRespostaRef = useRef<number>(0);
+  const [tempoRestante, setTempoRestante] = useState<number | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
+  const answeredRef = useRef<boolean>(false);
 
   const isMyTurn = currentPlayerId === playerId;
 
@@ -111,10 +115,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   useEffect(() => {
     fetchGameState();
 
-    // Load selected categories from DB
+    // Load selected categories + tempo_resposta from DB
     gameSupabase
       .from("jogos")
-      .select("categorias_selecionadas")
+      .select("categorias_selecionadas, tempo_resposta")
       .eq("id", gameId)
       .single()
       .then(({ data }) => {
@@ -126,6 +130,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
               console.log("[GamePlay] loaded categories from DB:", cats);
             }
           } catch {}
+        }
+        if (data && typeof (data as any).tempo_resposta === "number") {
+          tempoRespostaRef.current = (data as any).tempo_resposta;
+          console.log("[GamePlay] loaded tempo_resposta:", tempoRespostaRef.current);
         }
       });
 
