@@ -181,6 +181,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     return () => {
       if (rollTimeoutRef.current) window.clearTimeout(rollTimeoutRef.current);
+      if (timerIntervalRef.current) window.clearInterval(timerIntervalRef.current);
       window.clearInterval(pollInterval);
       gameSupabase.removeChannel(channel);
       gameSupabase.removeChannel(broadcastChannel);
