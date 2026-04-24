@@ -19,6 +19,19 @@ interface Pergunta {
   resposta_correta: string;
 }
 
+// Real DB row shape (external game database)
+interface PerguntaRow {
+  id: string;
+  pergunta: string;
+  alternativa_a: string;
+  alternativa_b: string;
+  alternativa_c: string;
+  alternativa_d: string;
+  correta: string;
+  categoria?: string;
+  dificuldade?: string;
+}
+
 interface GamePlayProps {
   gameId: string;
   playerId: string;
@@ -189,20 +202,20 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         return;
       }
 
-      const randomQ = questions[Math.floor(Math.random() * questions.length)];
+      const randomQ = (questions as unknown as PerguntaRow[])[Math.floor(Math.random() * questions.length)];
       usedQuestionIdsRef.current.add(randomQ.id);
 
       const perguntaObj: Pergunta = {
         id: String(randomQ.id),
-        texto: String(randomQ.texto),
-        alternativa_a: String(randomQ.alternativa_a),
-        alternativa_b: String(randomQ.alternativa_b),
-        alternativa_c: String(randomQ.alternativa_c),
-        alternativa_d: String(randomQ.alternativa_d),
-        resposta_correta: String(randomQ.resposta_correta),
+        texto: String(randomQ.pergunta ?? ""),
+        alternativa_a: String(randomQ.alternativa_a ?? ""),
+        alternativa_b: String(randomQ.alternativa_b ?? ""),
+        alternativa_c: String(randomQ.alternativa_c ?? ""),
+        alternativa_d: String(randomQ.alternativa_d ?? ""),
+        resposta_correta: String(randomQ.correta ?? ""),
       };
 
-      console.log("[GamePlay] pergunta selecionada:", perguntaObj.id, "categoria:", randomQ.categoria, "usadas:", usedQuestionIdsRef.current.size);
+      console.log("[GamePlay] pergunta selecionada:", perguntaObj.id, "categoria:", randomQ.categoria, "correta:", perguntaObj.resposta_correta, "usadas:", usedQuestionIdsRef.current.size);
 
       rollTimeoutRef.current = window.setTimeout(() => {
         setPergunta(perguntaObj);
@@ -300,7 +313,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       return;
     }
 
-    await gameSupabase.from("rodadas").insert({
+    const { error: rodadaError } = await gameSupabase.from("rodadas").insert({
       jogo_id: gameId,
       jogador_id: playerId,
       pergunta_id: pergunta.id,
@@ -310,6 +323,11 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       posicao_depois: novaPosicao,
       evento,
     });
+    if (rodadaError) {
+      console.error("[GamePlay] erro ao inserir rodada:", rodadaError);
+    } else {
+      console.log("[GamePlay] rodada inserida com sucesso");
+    }
 
     const venceu = novaPosicao >= 42;
     if (venceu) {
