@@ -86,8 +86,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       setErrorMessage(null);
       setResultMessage("");
       setPhase("waiting");
+      stopTimer();
+      answeredRef.current = false;
     }
   }, [currentPlayerId, playerId]);
+
+  const stopTimer = () => {
+    if (timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    setTempoRestante(null);
+  };
 
   const fetchGameState = useCallback(async () => {
     const { data: jogoData, error: jogoError } = await gameSupabase
