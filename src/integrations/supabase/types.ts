@@ -61,6 +61,7 @@ export type Database = {
           nome: string
           pin: string
           status: string
+          tempo_resposta: number
         }
         Insert: {
           categorias_selecionadas?: string | null
@@ -70,6 +71,7 @@ export type Database = {
           nome: string
           pin: string
           status?: string
+          tempo_resposta?: number
         }
         Update: {
           categorias_selecionadas?: string | null
@@ -79,6 +81,7 @@ export type Database = {
           nome?: string
           pin?: string
           status?: string
+          tempo_resposta?: number
         }
         Relationships: [
           {

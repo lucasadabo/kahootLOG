@@ -95,7 +95,9 @@ export default function JoinGame() {
       setPlayerId(insertData.id);
       setNickname(nick.trim());
 
+      // Late joiners: if game is already in progress, jump straight into GamePlay
       if (isGameStarted(jogo.status)) {
+        console.log("[JoinGame] Late joiner — game already started, going to GamePlay");
         setGameStarted(true);
       }
     } catch (err) {

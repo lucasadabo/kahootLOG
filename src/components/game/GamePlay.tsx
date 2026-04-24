@@ -60,6 +60,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const usedQuestionIdsRef = useRef<Set<string>>(new Set());
   const selectedCategoriesRef = useRef<string[]>([]);
+  const tempoRespostaRef = useRef<number>(0);
+  const [tempoRestante, setTempoRestante] = useState<number | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
+  const answeredRef = useRef<boolean>(false);
 
   const isMyTurn = currentPlayerId === playerId;
 
@@ -82,8 +86,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       setErrorMessage(null);
       setResultMessage("");
       setPhase("waiting");
+      stopTimer();
+      answeredRef.current = false;
     }
   }, [currentPlayerId, playerId]);
+
+  const stopTimer = () => {
+    if (timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    setTempoRestante(null);
+  };
 
   const fetchGameState = useCallback(async () => {
     const { data: jogoData, error: jogoError } = await gameSupabase
@@ -111,10 +125,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   useEffect(() => {
     fetchGameState();
 
-    // Load selected categories from DB
+    // Load selected categories + tempo_resposta from DB
     gameSupabase
       .from("jogos")
-      .select("categorias_selecionadas")
+      .select("categorias_selecionadas, tempo_resposta")
       .eq("id", gameId)
       .single()
       .then(({ data }) => {
@@ -126,6 +140,10 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
               console.log("[GamePlay] loaded categories from DB:", cats);
             }
           } catch {}
+        }
+        if (data && typeof (data as any).tempo_resposta === "number") {
+          tempoRespostaRef.current = (data as any).tempo_resposta;
+          console.log("[GamePlay] loaded tempo_resposta:", tempoRespostaRef.current);
         }
       });
 
@@ -140,6 +158,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         setErrorMessage(null);
         setResultMessage("");
         setPhase("waiting");
+        stopTimer();
+        answeredRef.current = false;
         fetchGameState();
       });
     broadcastChannel.subscribe();
@@ -161,6 +181,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     return () => {
       if (rollTimeoutRef.current) window.clearTimeout(rollTimeoutRef.current);
+      if (timerIntervalRef.current) window.clearInterval(timerIntervalRef.current);
       window.clearInterval(pollInterval);
       gameSupabase.removeChannel(channel);
       gameSupabase.removeChannel(broadcastChannel);
@@ -220,13 +241,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       rollTimeoutRef.current = window.setTimeout(() => {
         setPergunta(perguntaObj);
         setPhase("question");
+        answeredRef.current = false;
 
+        const tempo = tempoRespostaRef.current;
         broadcastChannelRef.current?.send({
           type: "broadcast",
           event: "question_started",
           payload: {
             playerId,
             dado: rolledValue,
+            tempo,
             pergunta: {
               id: perguntaObj.id,
               texto: perguntaObj.texto,
@@ -237,6 +261,27 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
             },
           },
         });
+
+        // Start countdown timer if configured
+        if (tempo > 0) {
+          setTempoRestante(tempo);
+          timerIntervalRef.current = window.setInterval(() => {
+            setTempoRestante((prev) => {
+              if (prev === null) return null;
+              if (prev <= 1) {
+                window.clearInterval(timerIntervalRef.current!);
+                timerIntervalRef.current = null;
+                // Auto-fail when timer expires
+                if (!answeredRef.current) {
+                  answeredRef.current = true;
+                  handleAnswer("__timeout__");
+                }
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
       }, 1800);
     } catch (err) {
       console.error("[GamePlay] erro ao buscar pergunta:", err);
@@ -273,7 +318,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   const handleAnswer = async (answer: string) => {
     if (!pergunta || !diceValue) return;
-    setSelectedAnswer(answer);
+    if (answeredRef.current && answer !== "__timeout__") return;
+    answeredRef.current = true;
+    stopTimer();
+
+    const isTimeout = answer === "__timeout__";
+    setSelectedAnswer(isTimeout ? null : answer);
     setErrorMessage(null);
 
     const { data: playerBefore, error: playerBeforeError } = await gameSupabase
@@ -289,7 +339,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     const posicaoAntes = playerBefore.posicao;
     const respostaCorreta = pergunta.resposta_correta;
-    const acertou = respostaCorreta.toUpperCase() === answer.toUpperCase();
+    const acertou = !isTimeout && respostaCorreta.toUpperCase() === answer.toUpperCase();
 
     let novaPosicao = acertou ? posicaoAntes + diceValue : posicaoAntes;
     let evento: string | null = null;
@@ -337,14 +387,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setResultMessage(
       acertou
         ? `✅ Correto! Você saiu da casa ${posicaoAntes} e foi para a ${novaPosicao}`
-        : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
+        : isTimeout
+          ? `⏱️ Tempo esgotado! Você permaneceu na casa ${posicaoAntes}`
+          : `❌ Errado! Você permaneceu na casa ${posicaoAntes}`
     );
     setEventMessage(evento);
 
     broadcastChannelRef.current?.send({
       type: "broadcast",
       event: "question_answered",
-      payload: { acertou, posicao_antes: posicaoAntes, posicao_depois: novaPosicao, evento, dado: diceValue, nickname },
+      payload: { acertou, posicao_antes: posicaoAntes, posicao_depois: novaPosicao, evento, dado: diceValue, nickname, timeout: isTimeout },
     });
 
     if (venceu) setGameStatus("finalizado");
@@ -422,6 +474,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
         {phase === "question" && pergunta && (
           <div className="space-y-4 animate-bounce-in">
+            {tempoRestante !== null && (
+              <div className={`p-4 rounded-xl border-2 text-center transition-colors ${
+                tempoRestante <= 10
+                  ? "bg-destructive/10 border-destructive/50 animate-pulse"
+                  : "bg-accent/10 border-accent/30"
+              }`}>
+                <p className="font-display font-bold text-3xl text-foreground flex items-center justify-center gap-2">
+                  <Clock className={`w-7 h-7 ${tempoRestante <= 10 ? "text-destructive" : "text-accent"}`} />
+                  {tempoRestante}s
+                </p>
+              </div>
+            )}
             <div className="p-4 rounded-xl bg-card border border-border">
               <p className="font-display font-bold text-lg text-foreground text-center">{pergunta.texto}</p>
             </div>
@@ -432,7 +496,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
                   <button
                     key={letter}
                     onClick={() => handleAnswer(letter)}
-                    disabled={!!selectedAnswer}
+                    disabled={!!selectedAnswer || answeredRef.current}
                     className="p-4 rounded-xl bg-card border-2 border-border text-left font-body text-foreground hover:border-primary hover:bg-primary/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="font-display font-bold text-primary mr-2">{letter})</span>
