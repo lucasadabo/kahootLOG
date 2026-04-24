@@ -34,6 +34,7 @@ export default function Admin() {
 
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [tempoResposta, setTempoResposta] = useState<number>(0); // 0 = sem tempo
 
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
@@ -154,7 +155,10 @@ export default function Admin() {
     setStarting(true);
     try {
       const catsJson = JSON.stringify(Array.from(selectedCategories));
-      await gameSupabase.from("jogos").update({ categorias_selecionadas: catsJson } as any).eq("id", game.id);
+      await gameSupabase
+        .from("jogos")
+        .update({ categorias_selecionadas: catsJson, tempo_resposta: tempoResposta } as any)
+        .eq("id", game.id);
 
       const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;
