@@ -368,6 +368,36 @@ export default function Admin() {
           </div>
         )}
 
+        {/* Tempo de resposta selector (before starting) */}
+        {(gameStatus === "aguardando" || gameStatus === "waiting") && (
+          <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+            <p className="font-display font-bold text-foreground text-lg">⏱️ Tempo para responder</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 0, label: "Sem tempo" },
+                { value: 60, label: "60 seg" },
+                { value: 120, label: "120 seg" },
+                { value: 180, label: "180 seg" },
+              ].map((opt) => {
+                const selected = tempoResposta === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setTempoResposta(opt.value)}
+                    className={`px-4 py-2 rounded-xl font-body font-medium text-sm transition-all border ${
+                      selected
+                        ? "bg-primary text-primary-foreground border-primary shadow-[var(--shadow-glow)]"
+                        : "bg-card text-muted-foreground border-border hover:border-primary/40"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Main content: Board + Players side by side */}
         <div className="flex gap-4">
           <div className="flex-1 min-w-0">
