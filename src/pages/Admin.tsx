@@ -158,20 +158,36 @@ export default function Admin() {
     }
   };
 
+  const broadcastGameConfig = useCallback(() => {
+    if (!configChannelRef.current) return;
+    configChannelRef.current.send({
+      type: "broadcast",
+      event: "game_config",
+      payload: {
+        categorias: selectedCategoriesRef.current,
+        tempoResposta: tempoRespostaRef.current,
+      },
+    });
+  }, []);
+
   const handleStartGame = async () => {
     if (!game) return;
     setStarting(true);
     try {
-      const catsJson = JSON.stringify(Array.from(selectedCategories));
+      // Persist tempo_limite (the only column that exists in the external DB).
+      // Categories are sent over realtime since the external DB has no column for them.
       await gameSupabase
         .from("jogos")
-        .update({ categorias_selecionadas: catsJson, tempo_resposta: tempoResposta } as any)
+        .update({ tempo_limite: tempoResposta } as any)
         .eq("id", game.id);
 
       const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;
       await fetchGame(game.id);
       await fetchPlayers(game.id);
+      // Broadcast config so players (including late joiners) know which
+      // categories to filter and which timer to use.
+      broadcastGameConfig();
     } catch (err) {
       console.error("[Admin] Erro ao iniciar jogo:", err);
     } finally {
