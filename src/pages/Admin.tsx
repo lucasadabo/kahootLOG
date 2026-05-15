@@ -36,6 +36,14 @@ export default function Admin() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [tempoResposta, setTempoResposta] = useState<number>(0); // 0 = sem tempo
 
+  // Refs used to reply to player config requests via realtime broadcast
+  const selectedCategoriesRef = useRef<string[]>([]);
+  const tempoRespostaRef = useRef<number>(0);
+  const configChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
+
+  useEffect(() => { selectedCategoriesRef.current = Array.from(selectedCategories); }, [selectedCategories]);
+  useEffect(() => { tempoRespostaRef.current = tempoResposta; }, [tempoResposta]);
+
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
       .from("jogos")
