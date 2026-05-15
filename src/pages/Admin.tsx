@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Monitor, Play, Plus, Copy, Check, Trophy, Zap, Lock } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
@@ -35,6 +35,14 @@ export default function Admin() {
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [tempoResposta, setTempoResposta] = useState<number>(0); // 0 = sem tempo
+
+  // Refs used to reply to player config requests via realtime broadcast
+  const selectedCategoriesRef = useRef<string[]>([]);
+  const tempoRespostaRef = useRef<number>(0);
+  const configChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
+
+  useEffect(() => { selectedCategoriesRef.current = Array.from(selectedCategories); }, [selectedCategories]);
+  useEffect(() => { tempoRespostaRef.current = tempoResposta; }, [tempoResposta]);
 
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
@@ -106,10 +114,30 @@ export default function Admin() {
       fetchPlayers(game.id);
     }, 2000);
 
+    // Realtime channel that mirrors game configuration to players.
+    // Players send "request_config" when they mount; admin replies with
+    // "game_config". Admin also broadcasts on start.
+    const configChannel = gameSupabase
+      .channel(`admin-overlay-${game.id}`)
+      .on("broadcast", { event: "request_config" }, () => {
+        configChannel.send({
+          type: "broadcast",
+          event: "game_config",
+          payload: {
+            categorias: selectedCategoriesRef.current,
+            tempoResposta: tempoRespostaRef.current,
+          },
+        });
+      })
+      .subscribe();
+    configChannelRef.current = configChannel;
+
     return () => {
       window.clearInterval(syncInterval);
       gameSupabase.removeChannel(playersChannel);
       gameSupabase.removeChannel(gameChannel);
+      gameSupabase.removeChannel(configChannel);
+      configChannelRef.current = null;
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
@@ -150,20 +178,36 @@ export default function Admin() {
     }
   };
 
+  const broadcastGameConfig = useCallback(() => {
+    if (!configChannelRef.current) return;
+    configChannelRef.current.send({
+      type: "broadcast",
+      event: "game_config",
+      payload: {
+        categorias: selectedCategoriesRef.current,
+        tempoResposta: tempoRespostaRef.current,
+      },
+    });
+  }, []);
+
   const handleStartGame = async () => {
     if (!game) return;
     setStarting(true);
     try {
-      const catsJson = JSON.stringify(Array.from(selectedCategories));
+      // Persist tempo_limite (the only column that exists in the external DB).
+      // Categories are sent over realtime since the external DB has no column for them.
       await gameSupabase
         .from("jogos")
-        .update({ categorias_selecionadas: catsJson, tempo_resposta: tempoResposta } as any)
+        .update({ tempo_limite: tempoResposta } as any)
         .eq("id", game.id);
 
       const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;
       await fetchGame(game.id);
       await fetchPlayers(game.id);
+      // Broadcast config so players (including late joiners) know which
+      // categories to filter and which timer to use.
+      broadcastGameConfig();
     } catch (err) {
       console.error("[Admin] Erro ao iniciar jogo:", err);
     } finally {
@@ -213,7 +257,7 @@ export default function Admin() {
     if (error) {
       const { data: allPlayers } = await gameSupabase
         .from("jogadores")
-        .select("id, pular_vez")
+        .select("id, pular_turno")
         .eq("jogo_id", currentGameId)
         .order("created_at", { ascending: true });
 
@@ -223,8 +267,8 @@ export default function Admin() {
         let attempts = 0;
 
         while (attempts < allPlayers.length) {
-          if (allPlayers[nextIdx].pular_vez) {
-            await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", allPlayers[nextIdx].id);
+          if (allPlayers[nextIdx].pular_turno) {
+            await gameSupabase.from("jogadores").update({ pular_turno: false }).eq("id", allPlayers[nextIdx].id);
             nextIdx = (nextIdx + 1) % allPlayers.length;
             attempts++;
           } else {
