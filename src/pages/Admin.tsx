@@ -257,7 +257,7 @@ export default function Admin() {
     if (error) {
       const { data: allPlayers } = await gameSupabase
         .from("jogadores")
-        .select("id, pular_vez")
+        .select("id, pular_turno")
         .eq("jogo_id", currentGameId)
         .order("created_at", { ascending: true });
 
@@ -267,8 +267,8 @@ export default function Admin() {
         let attempts = 0;
 
         while (attempts < allPlayers.length) {
-          if (allPlayers[nextIdx].pular_vez) {
-            await gameSupabase.from("jogadores").update({ pular_vez: false }).eq("id", allPlayers[nextIdx].id);
+          if (allPlayers[nextIdx].pular_turno) {
+            await gameSupabase.from("jogadores").update({ pular_turno: false }).eq("id", allPlayers[nextIdx].id);
             nextIdx = (nextIdx + 1) % allPlayers.length;
             attempts++;
           } else {

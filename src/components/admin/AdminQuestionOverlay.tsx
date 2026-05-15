@@ -109,18 +109,18 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     if (result.skipNextTurn) {
       const { error: skipError } = await gameSupabase
         .from("jogadores")
-        .update({ pular_vez: true })
+        .update({ pular_turno: true })
         .eq("id", result.playerId);
 
-      console.log("[AdminOverlay] update pular_vez:", { playerId: result.playerId, error: skipError });
+      console.log("[AdminOverlay] update pular_turno:", { playerId: result.playerId, error: skipError });
 
       if (!skipError) {
         const { data: skipCheck, error: skipCheckError } = await gameSupabase
           .from("jogadores")
-          .select("pular_vez")
+          .select("pular_turno")
           .eq("id", result.playerId)
           .single();
-        console.log("[AdminOverlay] verify pular_vez:", { data: skipCheck, error: skipCheckError });
+        console.log("[AdminOverlay] verify pular_turno:", { data: skipCheck, error: skipCheckError });
       }
     }
 
