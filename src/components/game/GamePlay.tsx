@@ -195,8 +195,23 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
         stopTimer();
         answeredRef.current = false;
         fetchGameState();
+      })
+      .on("broadcast", { event: "game_config" }, (payload) => {
+        const msg = payload.payload as { categorias?: string[]; tempoResposta?: number };
+        if (Array.isArray(msg.categorias)) {
+          selectedCategoriesRef.current = msg.categorias;
+        }
+        if (typeof msg.tempoResposta === "number") {
+          tempoRespostaRef.current = msg.tempoResposta;
+        }
+        console.log("[GamePlay] game_config received:", msg);
       });
-    broadcastChannel.subscribe();
+    broadcastChannel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        // Ask admin to send the current configuration (categories + timer)
+        broadcastChannel.send({ type: "broadcast", event: "request_config", payload: { gameId } });
+      }
+    });
     broadcastChannelRef.current = broadcastChannel;
 
     const channel = gameSupabase
