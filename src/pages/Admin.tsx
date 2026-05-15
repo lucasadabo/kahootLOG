@@ -114,10 +114,30 @@ export default function Admin() {
       fetchPlayers(game.id);
     }, 2000);
 
+    // Realtime channel that mirrors game configuration to players.
+    // Players send "request_config" when they mount; admin replies with
+    // "game_config". Admin also broadcasts on start.
+    const configChannel = gameSupabase
+      .channel(`admin-overlay-${game.id}`)
+      .on("broadcast", { event: "request_config" }, () => {
+        configChannel.send({
+          type: "broadcast",
+          event: "game_config",
+          payload: {
+            categorias: selectedCategoriesRef.current,
+            tempoResposta: tempoRespostaRef.current,
+          },
+        });
+      })
+      .subscribe();
+    configChannelRef.current = configChannel;
+
     return () => {
       window.clearInterval(syncInterval);
       gameSupabase.removeChannel(playersChannel);
       gameSupabase.removeChannel(gameChannel);
+      gameSupabase.removeChannel(configChannel);
+      configChannelRef.current = null;
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
