@@ -119,9 +119,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   };
 
   const loadGameConfig = useCallback(async (): Promise<GameConfig> => {
+    // The external game DB only has `tempo_limite` (not `tempo_resposta`)
+    // and has NO column for selected categories. Categories are received
+    // via realtime broadcast from the admin (see useEffect below).
     const { data, error } = await gameSupabase
       .from("jogos")
-      .select("categorias_selecionadas, tempo_resposta")
+      .select("tempo_limite")
       .eq("id", gameId)
       .single();
 
@@ -133,29 +136,18 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       };
     }
 
-    let categorias = selectedCategoriesRef.current;
-    if (data?.categorias_selecionadas) {
-      try {
-        const parsed = JSON.parse(data.categorias_selecionadas);
-        if (Array.isArray(parsed)) {
-          categorias = parsed;
-          selectedCategoriesRef.current = parsed;
-        }
-      } catch (parseError) {
-        console.error("[GamePlay] erro ao interpretar categorias_selecionadas:", parseError);
-      }
-    }
-
-    const tempoResposta = typeof data?.tempo_resposta === "number" ? data.tempo_resposta : tempoRespostaRef.current;
+    const tempoResposta = typeof (data as any)?.tempo_limite === "number"
+      ? (data as any).tempo_limite
+      : tempoRespostaRef.current;
     tempoRespostaRef.current = tempoResposta;
 
     console.log("[GamePlay] configuração atual do jogo:", {
-      categorias,
+      categorias: selectedCategoriesRef.current,
       tempoResposta,
     });
 
     return {
-      categorias,
+      categorias: selectedCategoriesRef.current,
       tempoResposta,
     };
   }, [gameId]);
