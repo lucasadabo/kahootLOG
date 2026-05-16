@@ -469,6 +469,7 @@ export default function Admin() {
               gameFinished={gameStatus === "finalizado" || gameStatus === "finished"}
               gameId={game.id}
               onPlayerRemoved={() => fetchPlayers(game.id)}
+              onAdvanceTurn={handleAdvanceTurn}
               vertical
             />
           </div>
