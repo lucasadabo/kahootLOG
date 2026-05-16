@@ -116,7 +116,8 @@ export default function Admin() {
 
     // Realtime channel that mirrors game configuration to players.
     // Players send "request_config" when they mount; admin replies with
-    // "game_config". Admin also broadcasts on start.
+    // "game_config". Admin also rebroadcasts on a heartbeat so late joiners
+    // and any client that missed the initial broadcast always pick it up.
     const configChannel = gameSupabase
       .channel(`admin-overlay-${game.id}`)
       .on("broadcast", { event: "request_config" }, () => {
@@ -132,8 +133,20 @@ export default function Admin() {
       .subscribe();
     configChannelRef.current = configChannel;
 
+    const configHeartbeat = window.setInterval(() => {
+      configChannel.send({
+        type: "broadcast",
+        event: "game_config",
+        payload: {
+          categorias: selectedCategoriesRef.current,
+          tempoResposta: tempoRespostaRef.current,
+        },
+      });
+    }, 1500);
+
     return () => {
       window.clearInterval(syncInterval);
+      window.clearInterval(configHeartbeat);
       gameSupabase.removeChannel(playersChannel);
       gameSupabase.removeChannel(gameChannel);
       gameSupabase.removeChannel(configChannel);
