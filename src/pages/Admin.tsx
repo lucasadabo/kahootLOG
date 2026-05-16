@@ -207,15 +207,17 @@ export default function Admin() {
     if (!game) return;
     setStarting(true);
     try {
-      // Persist tempo_limite (the only column that exists in the external DB).
+      const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
+      if (error) throw error;
+
+      // Persist tempo_limite AFTER iniciar_jogo (which may reset fields).
       // Categories are sent over realtime since the external DB has no column for them.
-      await gameSupabase
+      const { error: tempoError } = await gameSupabase
         .from("jogos")
         .update({ tempo_limite: tempoResposta } as any)
         .eq("id", game.id);
+      console.log("[Admin] update tempo_limite:", { tempoResposta, tempoError });
 
-      const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
-      if (error) throw error;
       await fetchGame(game.id);
       await fetchPlayers(game.id);
       // Broadcast config so players (including late joiners) know which
