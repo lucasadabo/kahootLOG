@@ -189,9 +189,37 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     }
   }, [gameId]);
 
+  const continueRoundRef = useRef<(result: RoundResult) => Promise<void>>();
+
+  const runContinue = useCallback(async (result: RoundResult) => {
+    if (continuing) return;
+    setContinuing(true);
+
+    const broadcastTurnAdvanced = () => {
+      const ch = gameSupabase.channel(`admin-overlay-${gameId}`);
+      ch.send({ type: "broadcast", event: "turn_advanced", payload: {} });
+    };
+
+    try {
+      resetOverlay();
+      await persistRound(result);
+      const shouldAnimateMovement = result.acertou && result.posicao_depois > result.posicao_antes;
+      if (shouldAnimateMovement) {
+        playMovementSound();
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+      await onAdvanceTurnRef.current?.();
+      broadcastTurnAdvanced();
+    } catch (error) {
+      console.error("[AdminOverlay] erro ao concluir rodada:", error);
+    } finally {
+      setContinuing(false);
+    }
+  }, [continuing, gameId, persistRound, resetOverlay]);
+  continueRoundRef.current = runContinue;
+
   const handleContinue = async () => {
     if (!roundResult || continuing) return;
-    setContinuing(true);
     const result = roundResult;
 
     const broadcastTurnAdvanced = () => {
