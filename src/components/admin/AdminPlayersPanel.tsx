@@ -25,10 +25,11 @@ interface AdminPlayersPanelProps {
   gameFinished: boolean;
   gameId: string;
   onPlayerRemoved?: () => void;
+  onAdvanceTurn?: () => Promise<void> | void;
   vertical?: boolean;
 }
 
-export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, gameId, onPlayerRemoved, vertical }: AdminPlayersPanelProps) {
+export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, gameId, onPlayerRemoved, onAdvanceTurn, vertical }: AdminPlayersPanelProps) {
   const [playerToRemove, setPlayerToRemove] = useState<Player | null>(null);
   const [removing, setRemoving] = useState(false);
 
@@ -36,14 +37,25 @@ export function AdminPlayersPanel({ players, currentPlayerId, gameFinished, game
     if (!playerToRemove) return;
     setRemoving(true);
     try {
-      if (playerToRemove.id === currentPlayerId) {
-        await gameSupabase.rpc("proximo_turno", { p_jogo_id: gameId });
-      }
+      const wasCurrent = playerToRemove.id === currentPlayerId;
+
       const { error } = await gameSupabase
         .from("jogadores")
         .delete()
         .eq("id", playerToRemove.id);
-      if (!error) onPlayerRemoved?.();
+
+      if (error) {
+        console.error("[Admin] erro ao remover jogador:", error);
+        return;
+      }
+
+      // If we removed the current player, advance the turn using the parent's
+      // robust fallback logic (handles the external DB schema correctly).
+      if (wasCurrent && onAdvanceTurn) {
+        await onAdvanceTurn();
+      }
+
+      onPlayerRemoved?.();
     } catch (err) {
       console.error("[Admin] erro ao remover jogador:", err);
     } finally {
