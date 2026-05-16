@@ -192,7 +192,8 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
   const continueRoundRef = useRef<(result: RoundResult) => Promise<void>>();
 
   const runContinue = useCallback(async (result: RoundResult) => {
-    if (continuing) return;
+    // ✅ FIX: timeout sempre passa, mesmo se continuing === true
+    if (continuing && !result.timeout) return;
     setContinuing(true);
 
     const broadcastTurnAdvanced = () => {
@@ -264,11 +265,12 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
         const msg = payload.payload as RoundResult;
         setRoundResult(msg);
         setVisible(true);
+        // ✅ FIX: garante continuing = false antes do auto-avanço por timeout
         setContinuing(false);
         stopTimer();
         if (msg.timeout) {
-          // Auto-advance after brief delay so admin sees the "tempo esgotado" message
           setTimeout(() => {
+            setContinuing(false);
             continueRoundRef.current?.(msg);
           }, 2500);
         }

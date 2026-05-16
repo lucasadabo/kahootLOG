@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { gameSupabase } from "@/lib/gameSupabase";
 import { JoinForm } from "@/components/game/JoinForm";
 import { WaitingLobby } from "@/components/game/WaitingLobby";
@@ -69,17 +69,36 @@ export default function JoinGame() {
         return;
       }
 
+      // ✅ FIX: calcula ordem_turno ANTES do INSERT para late joiners
+      let ordemTurno: number | null = null;
+      if (isGameStarted(jogo.status)) {
+        const { data: ordens } = await gameSupabase
+          .from("jogadores")
+          .select("ordem_turno")
+          .eq("jogo_id", jogo.id)
+          .not("ordem_turno", "is", null);
+
+        const maxOrdem = ordens && ordens.length > 0
+          ? Math.max(...ordens.map((j: any) => j.ordem_turno))
+          : 0;
+
+        ordemTurno = maxOrdem + 1;
+        console.log("[JoinGame] Late joiner, ordem_turno calculada:", ordemTurno);
+      }
+
       const { data: insertData, error: insertError } = await gameSupabase
         .from("jogadores")
         .insert({
           jogo_id: jogo.id,
           nickname: nick.trim(),
           cor_empilhadeira: generateRandomColor(),
+          // ✅ inclui ordem_turno direto no INSERT quando for late joiner
+          ...(ordemTurno !== null ? { ordem_turno: ordemTurno } : {}),
         })
         .select("id")
         .single();
 
-      console.log("[JoinGame] jogador INSERT:", { insertData, insertError });
+      console.log("[JoinGame] jogador INSERT:", { insertData, insertError, ordemTurno });
 
       if (insertError || !insertData) {
         console.error("[JoinGame] jogador INSERT ERROR:", insertError);
@@ -95,7 +114,6 @@ export default function JoinGame() {
       setPlayerId(insertData.id);
       setNickname(nick.trim());
 
-      // Late joiners: if game is already in progress, jump straight into GamePlay
       if (isGameStarted(jogo.status)) {
         console.log("[JoinGame] Late joiner — game already started, going to GamePlay");
         setGameStarted(true);

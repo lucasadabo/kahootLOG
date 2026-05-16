@@ -83,14 +83,12 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
   const [tempoRestante, setTempoRestante] = useState<number | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const answeredRef = useRef<boolean>(false);
+  // Ref para acessar handleAnswer dentro do useEffect sem dependência circular
+  const handleAnswerRef = useRef<(answer: string) => Promise<void>>();
 
   const isMyTurn = currentPlayerId === playerId;
 
-  // Track a turn counter to detect turn advances even for single player
-  const turnCounterRef = useRef(0);
-
-  // Reset phase when turn changes to this player
-  // For single-player: we watch for game state updates that signal a new turn
+  // Reset phase when turn changes
   useEffect(() => {
     if (currentPlayerId === null) return;
     
@@ -118,10 +116,16 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
     setTempoRestante(null);
   };
 
+  // ✅ FIX: Observa tempoRestante === 0 e dispara timeout em useEffect separado,
+  // fora do setState callback — evita chamar função async dentro de setState.
+  useEffect(() => {
+    if (tempoRestante === 0 && phase === "question" && !answeredRef.current) {
+      answeredRef.current = true;
+      handleAnswerRef.current?.("__timeout__");
+    }
+  }, [tempoRestante, phase]);
+
   const loadGameConfig = useCallback(async (): Promise<GameConfig> => {
-    // The external game DB only has `tempo_limite` (not `tempo_resposta`)
-    // and has NO column for selected categories. Categories are received
-    // via realtime broadcast from the admin (see useEffect below).
     const { data, error } = await gameSupabase
       .from("jogos")
       .select("tempo_limite")
@@ -177,14 +181,11 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
   useEffect(() => {
     fetchGameState();
-
-    // Load selected categories + tempo_resposta from DB
     loadGameConfig();
 
     const broadcastChannel = gameSupabase.channel(`admin-overlay-${gameId}`)
       .on("broadcast", { event: "turn_advanced" }, () => {
         console.log("[GamePlay] turn_advanced received, resetting phase");
-        // Force reset for single-player scenario
         setDiceValue(null);
         setPergunta(null);
         setSelectedAnswer(null);
@@ -208,7 +209,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       });
     broadcastChannel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        // Ask admin to send the current configuration (categories + timer)
         broadcastChannel.send({ type: "broadcast", event: "request_config", payload: { gameId } });
       }
     });
@@ -254,7 +254,6 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
       const { data } = await query;
       let questions = data;
 
-      // If no unused questions left, reset pool
       if (!questions || questions.length === 0) {
         usedQuestionIdsRef.current.clear();
         let resetQuery = gameSupabase.from("perguntas").select("*");
@@ -311,7 +310,8 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
           },
         });
 
-        // Start countdown timer if configured
+        // ✅ FIX: O timer apenas decrementa o estado.
+        // O disparo do timeout acontece no useEffect que observa tempoRestante === 0.
         if (tempo > 0) {
           setTempoRestante(tempo);
           timerIntervalRef.current = window.setInterval(() => {
@@ -320,12 +320,7 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
               if (prev <= 1) {
                 window.clearInterval(timerIntervalRef.current!);
                 timerIntervalRef.current = null;
-                // Auto-fail when timer expires
-                if (!answeredRef.current) {
-                  answeredRef.current = true;
-                  handleAnswer("__timeout__");
-                }
-                return 0;
+                return 0; // useEffect cuida do timeout
               }
               return prev - 1;
             });
@@ -433,6 +428,9 @@ export function GamePlay({ gameId, playerId, nickname }: GamePlayProps) {
 
     setPhase("result");
   };
+
+  // ✅ Mantém ref atualizada para uso no useEffect do timeout
+  handleAnswerRef.current = handleAnswer;
 
   const currentPlayer = players.find((p) => p.id === currentPlayerId);
   const winner = players.find((p) => p.posicao >= 42);
