@@ -189,10 +189,11 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     }
   }, [gameId]);
 
-  const handleContinue = async () => {
-    if (!roundResult || continuing) return;
+  const continueRoundRef = useRef<(result: RoundResult) => Promise<void>>();
+
+  const runContinue = useCallback(async (result: RoundResult) => {
+    if (continuing) return;
     setContinuing(true);
-    const result = roundResult;
 
     const broadcastTurnAdvanced = () => {
       const ch = gameSupabase.channel(`admin-overlay-${gameId}`);
@@ -201,15 +202,12 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
 
     try {
       resetOverlay();
-
       await persistRound(result);
-
       const shouldAnimateMovement = result.acertou && result.posicao_depois > result.posicao_antes;
       if (shouldAnimateMovement) {
         playMovementSound();
         await new Promise((r) => setTimeout(r, 2500));
       }
-
       await onAdvanceTurnRef.current?.();
       broadcastTurnAdvanced();
     } catch (error) {
@@ -217,6 +215,12 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
     } finally {
       setContinuing(false);
     }
+  }, [continuing, gameId, persistRound, resetOverlay]);
+  continueRoundRef.current = runContinue;
+
+  const handleContinue = async () => {
+    if (!roundResult) return;
+    await runContinue(roundResult);
   };
 
   useEffect(() => {
@@ -262,6 +266,12 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
         setVisible(true);
         setContinuing(false);
         stopTimer();
+        if (msg.timeout) {
+          // Auto-advance after brief delay so admin sees the "tempo esgotado" message
+          setTimeout(() => {
+            continueRoundRef.current?.(msg);
+          }, 2500);
+        }
       })
       .subscribe();
 
