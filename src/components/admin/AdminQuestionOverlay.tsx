@@ -266,6 +266,12 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
         setVisible(true);
         setContinuing(false);
         stopTimer();
+        if (msg.timeout) {
+          // Auto-advance after brief delay so admin sees the "tempo esgotado" message
+          setTimeout(() => {
+            continueRoundRef.current?.(msg);
+          }, 2500);
+        }
       })
       .subscribe();
 
