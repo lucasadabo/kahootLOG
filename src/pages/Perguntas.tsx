@@ -16,6 +16,9 @@ interface Pergunta {
   dificuldade?: string;
 }
 
+type EditingCell = { id: string; field: keyof Pergunta } | null;
+type SaveStatus = { id: string; field: keyof Pergunta; status: "saving" | "saved" | "error" } | null;
+
 const PAGE_SIZE = 100;
 
 export default function Perguntas() {
@@ -31,6 +34,12 @@ export default function Perguntas() {
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline editing state
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(null);
+  const saveStatusTimerRef = useRef<number | null>(null);
 
   const showToast = (type: "success" | "error", message: string) => {
     setToast({ type, message });
@@ -64,6 +73,57 @@ export default function Perguntas() {
     fetchPerguntas();
   }, [fetchPerguntas]);
 
+  // --- Inline editing ---
+  const startEdit = (p: Pergunta, field: keyof Pergunta) => {
+    setEditingCell({ id: p.id, field });
+    setEditValue(String(p[field] ?? ""));
+  };
+
+  const cancelEdit = () => {
+    setEditingCell(null);
+    setEditValue("");
+  };
+
+  const commitEdit = async (id: string, field: keyof Pergunta, value: string) => {
+    const trimmed = field === "correta" ? value.trim().toUpperCase() : value.trim();
+
+    // Update local state immediately for snappy UX
+    setPerguntas((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [field]: trimmed } : p))
+    );
+    setEditingCell(null);
+
+    // Show saving indicator
+    setSaveStatus({ id, field, status: "saving" });
+    if (saveStatusTimerRef.current) window.clearTimeout(saveStatusTimerRef.current);
+
+    try {
+      const { error } = await gameSupabase
+        .from("perguntas")
+        .update({ [field]: trimmed })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setSaveStatus({ id, field, status: "saved" });
+      saveStatusTimerRef.current = window.setTimeout(() => setSaveStatus(null), 2000);
+    } catch {
+      setSaveStatus({ id, field, status: "error" });
+      saveStatusTimerRef.current = window.setTimeout(() => setSaveStatus(null), 3000);
+      showToast("error", "Erro ao salvar alteração.");
+    }
+  };
+
+  const handleCellKeyDown = (e: React.KeyboardEvent, id: string, field: keyof Pergunta) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      commitEdit(id, field, editValue);
+    }
+    if (e.key === "Escape") {
+      cancelEdit();
+    }
+  };
+
   // Download template XLSX
   const handleDownloadTemplate = () => {
     const headers = [["pergunta", "alternativa_a", "alternativa_b", "alternativa_c", "alternativa_d", "correta", "categoria", "dificuldade"]];
@@ -83,7 +143,6 @@ export default function Perguntas() {
       showToast("error", "Apenas arquivos .xlsx ou .xls são aceitos.");
       return;
     }
-
     setUploading(true);
     try {
       const buffer = await file.arrayBuffer();
@@ -91,10 +150,7 @@ export default function Perguntas() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<any>(ws);
 
-      if (rows.length === 0) {
-        showToast("error", "Planilha vazia ou sem dados.");
-        return;
-      }
+      if (rows.length === 0) { showToast("error", "Planilha vazia ou sem dados."); return; }
 
       const inserts = rows
         .filter((r) => r.pergunta && r.alternativa_a && r.alternativa_b && r.alternativa_c && r.alternativa_d && r.correta)
@@ -109,10 +165,7 @@ export default function Perguntas() {
           dificuldade: r.dificuldade ? String(r.dificuldade).trim() : null,
         }));
 
-      if (inserts.length === 0) {
-        showToast("error", "Nenhuma linha válida encontrada. Verifique os títulos das colunas.");
-        return;
-      }
+      if (inserts.length === 0) { showToast("error", "Nenhuma linha válida encontrada. Verifique os títulos das colunas."); return; }
 
       const { error } = await gameSupabase.from("perguntas").insert(inserts);
       if (error) throw error;
@@ -121,7 +174,6 @@ export default function Perguntas() {
       setPage(0);
       fetchPerguntas();
     } catch (err) {
-      console.error(err);
       showToast("error", "Erro ao processar o arquivo.");
     } finally {
       setUploading(false);
@@ -142,7 +194,8 @@ export default function Perguntas() {
   };
 
   // Selection
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -151,17 +204,13 @@ export default function Perguntas() {
   };
 
   const toggleAll = () => {
-    if (selected.size === perguntas.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(perguntas.map((p) => p.id)));
-    }
+    if (selected.size === perguntas.length) setSelected(new Set());
+    else setSelected(new Set(perguntas.map((p) => p.id)));
   };
 
   const handleDelete = async () => {
     if (selected.size === 0) return;
     if (!window.confirm(`Deletar ${selected.size} pergunta(s)? Esta ação não pode ser desfeita.`)) return;
-
     setDeleting(true);
     try {
       const ids = Array.from(selected);
@@ -170,7 +219,7 @@ export default function Perguntas() {
       showToast("success", `${ids.length} pergunta(s) deletada(s).`);
       setPage(0);
       fetchPerguntas();
-    } catch (err) {
+    } catch {
       showToast("error", "Erro ao deletar perguntas.");
     } finally {
       setDeleting(false);
@@ -179,6 +228,62 @@ export default function Perguntas() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const allSelected = perguntas.length > 0 && selected.size === perguntas.length;
+
+  // Renders an editable cell
+  const renderCell = (p: Pergunta, field: keyof Pergunta) => {
+    const isEditing = editingCell?.id === p.id && editingCell?.field === field;
+    const isSaving = saveStatus?.id === p.id && saveStatus?.field === field && saveStatus.status === "saving";
+    const isSaved = saveStatus?.id === p.id && saveStatus?.field === field && saveStatus.status === "saved";
+    const isError = saveStatus?.id === p.id && saveStatus?.field === field && saveStatus.status === "error";
+    const isShort = field === "correta" || field === "dificuldade";
+
+    if (isEditing) {
+      return (
+        <div className="relative" onClick={(e) => e.stopPropagation()}>
+          {isShort ? (
+            <input
+              autoFocus
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={() => commitEdit(p.id, field, editValue)}
+              onKeyDown={(e) => handleCellKeyDown(e, p.id, field)}
+              className="w-full min-w-[60px] px-2 py-1 rounded-lg bg-background border-2 border-primary text-foreground font-body text-sm focus:outline-none uppercase"
+              maxLength={field === "correta" ? 1 : 20}
+            />
+          ) : (
+            <textarea
+              autoFocus
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={() => commitEdit(p.id, field, editValue)}
+              onKeyDown={(e) => handleCellKeyDown(e, p.id, field)}
+              rows={3}
+              className="w-full min-w-[200px] px-2 py-1 rounded-lg bg-background border-2 border-primary text-foreground font-body text-sm focus:outline-none resize-y"
+            />
+          )}
+          <p className="text-xs text-muted-foreground mt-1">Enter para salvar • Esc para cancelar</p>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="relative group cursor-text min-h-[2rem] flex items-start gap-1"
+        onClick={(e) => { e.stopPropagation(); startEdit(p, field); }}
+        title="Clique para editar"
+      >
+        <span className="whitespace-pre-wrap break-words text-foreground">
+          {String(p[field] ?? "") || <span className="text-muted-foreground/40 italic text-xs">—</span>}
+        </span>
+        {isSaving && <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0 mt-0.5" />}
+        {isSaved && <CheckCircle2 className="w-3 h-3 text-accent shrink-0 mt-0.5 animate-in zoom-in duration-200" />}
+        {isError && <AlertCircle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />}
+        {!isSaving && !isSaved && !isError && (
+          <span className="absolute inset-0 rounded border border-transparent group-hover:border-primary/30 group-hover:bg-primary/5 transition-all pointer-events-none" />
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen flex flex-col px-4 py-6 bg-background">
@@ -194,7 +299,7 @@ export default function Perguntas() {
         </div>
       )}
 
-      <div className="w-full max-w-6xl mx-auto space-y-6">
+      <div className="w-full max-w-[1400px] mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
           <button
@@ -205,21 +310,18 @@ export default function Perguntas() {
           </button>
           <div>
             <h1 className="text-3xl font-display font-bold text-primary text-glow">Banco de Perguntas</h1>
-            <p className="text-muted-foreground font-body text-sm">{total} pergunta(s) cadastrada(s)</p>
+            <p className="text-muted-foreground font-body text-sm">{total} pergunta(s) cadastrada(s) • Clique em qualquer célula para editar</p>
           </div>
         </div>
 
         {/* Upload + Download */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Download template */}
           <div className="p-5 rounded-xl bg-card border border-border space-y-3">
             <div className="flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-primary" />
               <p className="font-display font-bold text-foreground">Modelo de Planilha</p>
             </div>
-            <p className="text-muted-foreground font-body text-sm">
-              Baixe o modelo, preencha com as perguntas e faça o upload abaixo.
-            </p>
+            <p className="text-muted-foreground font-body text-sm">Baixe o modelo, preencha com as perguntas e faça o upload abaixo.</p>
             <button
               onClick={handleDownloadTemplate}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-display font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
@@ -229,16 +331,13 @@ export default function Perguntas() {
             </button>
           </div>
 
-          {/* Upload */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={`p-5 rounded-xl border-2 border-dashed cursor-pointer transition-all space-y-3 ${
-              dragOver
-                ? "border-primary bg-primary/10"
-                : "border-border bg-card hover:border-primary/40 hover:bg-muted"
+              dragOver ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40 hover:bg-muted"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -251,23 +350,14 @@ export default function Perguntas() {
                 Processando...
               </div>
             ) : (
-              <p className="text-muted-foreground font-body text-sm">
-                Arraste o arquivo .xlsx aqui ou clique para selecionar
-              </p>
+              <p className="text-muted-foreground font-body text-sm">Arraste o arquivo .xlsx aqui ou clique para selecionar</p>
             )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
           </div>
         </div>
 
         {/* Table */}
         <div className="rounded-xl bg-card border border-border overflow-hidden">
-          {/* Table header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
             <div className="flex items-center gap-3">
               <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition-colors">
@@ -304,58 +394,39 @@ export default function Perguntas() {
                 <thead>
                   <tr className="border-b border-border bg-background/40">
                     <th className="w-10 px-4 py-3"></th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">Pergunta</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">A</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">B</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">C</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">D</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">Correta</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">Categoria</th>
-                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs">Dificuldade</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[300px]">Pergunta</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[160px]">A</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[160px]">B</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[160px]">C</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[160px]">D</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs w-20">Correta</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[120px]">Categoria</th>
+                    <th className="px-4 py-3 text-left text-muted-foreground font-display font-bold uppercase tracking-wider text-xs min-w-[100px]">Dificuldade</th>
                   </tr>
                 </thead>
                 <tbody>
                   {perguntas.map((p, i) => (
                     <tr
                       key={p.id}
-                      className={`border-b border-border/50 transition-colors ${
+                      className={`border-b border-border/50 transition-colors align-top ${
                         selected.has(p.id) ? "bg-primary/5" : i % 2 === 0 ? "bg-transparent" : "bg-background/20"
-                      } hover:bg-muted cursor-pointer`}
-                      onClick={() => toggleSelect(p.id)}
+                      }`}
                     >
-                      <td className="px-4 py-3">
-                        {selected.has(p.id)
-                          ? <CheckSquare className="w-4 h-4 text-primary" />
-                          : <Square className="w-4 h-4 text-muted-foreground" />}
+                      <td className="px-4 py-3" onClick={(e) => toggleSelect(p.id, e)}>
+                        <div className="cursor-pointer pt-1">
+                          {selected.has(p.id)
+                            ? <CheckSquare className="w-4 h-4 text-primary" />
+                            : <Square className="w-4 h-4 text-muted-foreground" />}
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-foreground max-w-xs">
-                        <span className="line-clamp-2">{p.pergunta}</span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground max-w-[120px]">
-                        <span className="line-clamp-1">{p.alternativa_a}</span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground max-w-[120px]">
-                        <span className="line-clamp-1">{p.alternativa_b}</span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground max-w-[120px]">
-                        <span className="line-clamp-1">{p.alternativa_c}</span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground max-w-[120px]">
-                        <span className="line-clamp-1">{p.alternativa_d}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent font-display font-bold">
-                          {p.correta}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.categoria && (
-                          <span className="px-2 py-1 rounded-lg bg-primary/10 text-primary font-body text-xs">
-                            {p.categoria}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">{p.dificuldade ?? "—"}</td>
+                      <td className="px-4 py-3">{renderCell(p, "pergunta")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "alternativa_a")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "alternativa_b")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "alternativa_c")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "alternativa_d")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "correta")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "categoria")}</td>
+                      <td className="px-4 py-3">{renderCell(p, "dificuldade")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -363,7 +434,6 @@ export default function Perguntas() {
             </div>
           )}
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-5 py-4 border-t border-border">
               <p className="text-muted-foreground font-body text-sm">
