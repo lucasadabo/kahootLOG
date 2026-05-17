@@ -124,10 +124,26 @@ export function AdminQuestionOverlay({ gameId, players, onAdvanceTurn }: AdminQu
       }
     }
 
-    const { error: updateError } = await gameSupabase
-      .from("jogadores")
-      .update({ posicao: result.posicao_depois })
-      .eq("id", result.playerId);
+const SPECIAL_CELLS = new Set([10, 20, 30, 40]);
+const posicaoIntermediaria = result.posicao_antes + result.dado;
+const temCasaEspecial = result.acertou && SPECIAL_CELLS.has(posicaoIntermediaria) && result.evento;
+
+if (temCasaEspecial) {
+  // Etapa 1: move para a casa especial
+  await gameSupabase
+    .from("jogadores")
+    .update({ posicao: posicaoIntermediaria })
+    .eq("id", result.playerId);
+
+  // Aguarda para o admin ver a empilhadeira na casa especial
+  await new Promise((r) => setTimeout(r, 2000));
+}
+
+// Etapa 2 (ou única): move para o destino final
+const { error: updateError } = await gameSupabase
+  .from("jogadores")
+  .update({ posicao: result.posicao_depois })
+  .eq("id", result.playerId);
 
     console.log("[AdminOverlay] update posicao jogador:", {
       playerId: result.playerId,
