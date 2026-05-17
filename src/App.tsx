@@ -7,6 +7,7 @@ import Index from "./pages/Index.tsx";
 import JoinGame from "./pages/JoinGame.tsx";
 import Admin from "./pages/Admin.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import Perguntas from "./pages/Perguntas.tsx";
 
 const queryClient = new QueryClient();
 
@@ -20,7 +21,8 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/join" element={<JoinGame />} />
           <Route path="/admin" element={<Admin />} />
-          <Route path="*" element={<NotFound />} />
+          <Route path="/perguntas" element={<Perguntas />} />
+<Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>

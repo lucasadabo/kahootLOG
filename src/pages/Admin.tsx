@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Monitor, Play, Plus, Copy, Check, Trophy, Zap, Lock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Zap, Lock, FileSpreadsheet } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
@@ -22,7 +23,8 @@ interface Game {
 const ADMIN_PASSWORD = "teste123";
 
 export default function Admin() {
-  const [authenticated, setAuthenticated] = useState(false);
+  const navigate = useNavigate();
+const [authenticated, setAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
 
@@ -355,6 +357,13 @@ export default function Admin() {
           >
             {creating ? <span className="animate-pulse-slow">Criando...</span> : <><Plus className="w-7 h-7" />Criar Jogo</>}
           </button>
+          <button
+            onClick={() => navigate("/perguntas")}
+            className="inline-flex items-center gap-2 h-14 px-8 rounded-2xl bg-card border-2 border-border text-foreground text-lg font-display font-medium hover:border-primary/40 hover:bg-muted transition-all"
+          >
+            <FileSpreadsheet className="w-5 h-5" />
+            Banco de Perguntas
+          </button>
         </div>
       </div>
     );
@@ -373,6 +382,13 @@ export default function Admin() {
               className="p-2 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all"
             >
               {copied ? <Check className="w-5 h-5 text-accent" /> : <Copy className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={() => navigate("/perguntas")}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all font-display font-medium text-sm"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Banco de Perguntas
             </button>
           </div>
 
