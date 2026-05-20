@@ -26,6 +26,21 @@ export default function JoinGame() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+  const saved = sessionStorage.getItem("quizgame_session");
+  if (!saved) return;
+  try {
+    const { gameId: gId, playerId: pId, nickname: nick } = JSON.parse(saved);
+    if (gId && pId && nick) {
+      setGameId(gId);
+      setPlayerId(pId);
+      setNickname(nick);
+    }
+  } catch (_) {
+    sessionStorage.removeItem("quizgame_session");
+  }
+}, []);
+
   // Poll game status directly in JoinGame once we have a gameId
   useEffect(() => {
     if (!gameId || gameStarted) return;
@@ -113,6 +128,11 @@ export default function JoinGame() {
       setGameId(jogo.id);
       setPlayerId(insertData.id);
       setNickname(nick.trim());
+      sessionStorage.setItem("quizgame_session", JSON.stringify({
+  gameId: jogo.id,
+  playerId: insertData.id,
+  nickname: nick.trim(),
+}));
 
       if (isGameStarted(jogo.status)) {
         console.log("[JoinGame] Late joiner — game already started, going to GamePlay");

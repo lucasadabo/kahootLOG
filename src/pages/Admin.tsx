@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { Monitor, Play, Plus, Copy, Check, Trophy, Zap, Lock, FileSpreadsheet } from "lucide-react";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Lock } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
 import { gameSupabase } from "@/lib/gameSupabase";
+import { PodiumOverlay } from "@/components/admin/PodiumOverlay";
 
 interface Player {
   id: string;
@@ -17,14 +17,12 @@ interface Game {
   id: string;
   pin: string;
   status: string;
-  jogador_atual_id: string | null;
 }
 
 const ADMIN_PASSWORD = "teste123";
 
 export default function Admin() {
-  const navigate = useNavigate();
-const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
 
@@ -36,29 +34,26 @@ const [authenticated, setAuthenticated] = useState(false);
 
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
-  const [tempoResposta, setTempoResposta] = useState<number>(0); // 0 = sem tempo
+  const [tempoResposta, setTempoResposta] = useState<number>(0);
+  const [showPodium, setShowPodium] = useState(false);
 
-  // Refs used to reply to player config requests via realtime broadcast
+  
   const selectedCategoriesRef = useRef<string[]>([]);
   const tempoRespostaRef = useRef<number>(0);
   const configChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
 
   useEffect(() => { selectedCategoriesRef.current = Array.from(selectedCategories); }, [selectedCategories]);
   useEffect(() => { tempoRespostaRef.current = tempoResposta; }, [tempoResposta]);
+  
 
   const fetchGame = useCallback(async (gameId: string) => {
     const { data, error } = await gameSupabase
       .from("jogos")
-      .select("id, pin, status, jogador_atual_id")
+      .select("id, pin, status")
       .eq("id", gameId)
       .single();
 
-    if (!error && data) {
-      setGame({
-        ...data,
-        jogador_atual_id: data.jogador_atual_id ?? null,
-      });
-    }
+    if (!error && data) setGame(data);
   }, []);
 
   const fetchPlayers = useCallback(async (gameId: string) => {
@@ -68,17 +63,12 @@ const [authenticated, setAuthenticated] = useState(false);
       .eq("jogo_id", gameId)
       .order("created_at", { ascending: true });
 
-    if (!error && data) {
-      setPlayers(data);
-    }
+    if (!error && data) setPlayers(data);
   }, []);
 
   const fetchCategories = useCallback(async () => {
     try {
-      const { data, error } = await gameSupabase
-        .from("perguntas")
-        .select("categoria");
-
+      const { data, error } = await gameSupabase.from("perguntas").select("categoria");
       if (!error && data) {
         const unique = [...new Set(data.map((r: any) => r.categoria).filter(Boolean))];
         setCategories(unique.sort());
@@ -89,6 +79,18 @@ const [authenticated, setAuthenticated] = useState(false);
     }
   }, []);
 
+  const broadcastGameConfig = useCallback(() => {
+    if (!configChannelRef.current) return;
+    configChannelRef.current.send({
+      type: "broadcast",
+      event: "game_config",
+      payload: {
+        categorias: selectedCategoriesRef.current,
+        tempoResposta: tempoRespostaRef.current,
+      },
+    });
+  }, []);
+
   useEffect(() => {
     if (!game) return;
 
@@ -97,29 +99,23 @@ const [authenticated, setAuthenticated] = useState(false);
 
     const playersChannel = gameSupabase
       .channel(`admin-jogadores-${game.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` }, () => fetchPlayers(game.id))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` }, () => fetchPlayers(game.id))
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` }, () => fetchPlayers(game.id))
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") fetchPlayers(game.id);
-      });
+      .on("postgres_changes", { event: "*", schema: "public", table: "jogadores", filter: `jogo_id=eq.${game.id}` }, () => fetchPlayers(game.id))
+      .subscribe(() => fetchPlayers(game.id));
 
     const gameChannel = gameSupabase
       .channel(`admin-jogo-${game.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${game.id}` }, () => { fetchGame(game.id); fetchPlayers(game.id); })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") fetchGame(game.id);
-      });
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jogos", filter: `id=eq.${game.id}` }, () => {
+        fetchGame(game.id);
+        fetchPlayers(game.id);
+      })
+      .subscribe(() => fetchGame(game.id));
 
     const syncInterval = window.setInterval(() => {
       fetchGame(game.id);
       fetchPlayers(game.id);
     }, 2000);
 
-    // Realtime channel that mirrors game configuration to players.
-    // Players send "request_config" when they mount; admin replies with
-    // "game_config". Admin also rebroadcasts on a heartbeat so late joiners
-    // and any client that missed the initial broadcast always pick it up.
+    // Config broadcast channel — responds to player requests
     const configChannel = gameSupabase
       .channel(`admin-overlay-${game.id}`)
       .on("broadcast", { event: "request_config" }, () => {
@@ -156,6 +152,10 @@ const [authenticated, setAuthenticated] = useState(false);
     };
   }, [game?.id, fetchGame, fetchPlayers]);
 
+  // ---------------------------------------------------------------------------
+  // Auth
+  // ---------------------------------------------------------------------------
+
   const handlePasswordSubmit = () => {
     if (passwordInput === ADMIN_PASSWORD) {
       setAuthenticated(true);
@@ -164,6 +164,10 @@ const [authenticated, setAuthenticated] = useState(false);
       setPasswordError(true);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Game actions
+  // ---------------------------------------------------------------------------
 
   const handleCreateGame = async () => {
     setCreating(true);
@@ -174,16 +178,12 @@ const [authenticated, setAuthenticated] = useState(false);
       const gameId = data as string;
       const { data: jogoData, error: fetchError } = await gameSupabase
         .from("jogos")
-        .select("id, pin, status, jogador_atual_id")
+        .select("id, pin, status")
         .eq("id", gameId)
         .single();
 
       if (fetchError || !jogoData) throw fetchError;
-
-      setGame({
-        ...jogoData,
-        jogador_atual_id: jogoData.jogador_atual_id ?? null,
-      });
+      setGame(jogoData);
       setPlayers([]);
       fetchCategories();
     } catch (err) {
@@ -193,18 +193,6 @@ const [authenticated, setAuthenticated] = useState(false);
     }
   };
 
-  const broadcastGameConfig = useCallback(() => {
-    if (!configChannelRef.current) return;
-    configChannelRef.current.send({
-      type: "broadcast",
-      event: "game_config",
-      payload: {
-        categorias: selectedCategoriesRef.current,
-        tempoResposta: tempoRespostaRef.current,
-      },
-    });
-  }, []);
-
   const handleStartGame = async () => {
     if (!game) return;
     setStarting(true);
@@ -212,18 +200,14 @@ const [authenticated, setAuthenticated] = useState(false);
       const { error } = await gameSupabase.rpc("iniciar_jogo", { p_jogo_id: game.id });
       if (error) throw error;
 
-      // Persist tempo_limite AFTER iniciar_jogo (which may reset fields).
-      // Categories are sent over realtime since the external DB has no column for them.
-      const { error: tempoError } = await gameSupabase
+      // Persiste tempo_limite
+      await gameSupabase
         .from("jogos")
         .update({ tempo_limite: tempoResposta } as any)
         .eq("id", game.id);
-      console.log("[Admin] update tempo_limite:", { tempoResposta, tempoError });
 
       await fetchGame(game.id);
       await fetchPlayers(game.id);
-      // Broadcast config so players (including late joiners) know which
-      // categories to filter and which timer to use.
       broadcastGameConfig();
     } catch (err) {
       console.error("[Admin] Erro ao iniciar jogo:", err);
@@ -239,8 +223,17 @@ const [authenticated, setAuthenticated] = useState(false);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleRemovePlayer = async (playerId: string) => {
+    await gameSupabase.from("jogadores").delete().eq("id", playerId);
+    if (game) fetchPlayers(game.id);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Category / time helpers
+  // ---------------------------------------------------------------------------
+
   const toggleCategory = (cat: string) => {
-    setSelectedCategories(prev => {
+    setSelectedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(cat)) {
         if (next.size <= 1) return prev;
@@ -254,58 +247,23 @@ const [authenticated, setAuthenticated] = useState(false);
 
   const selectAllCategories = () => setSelectedCategories(new Set(categories));
 
-  const handleAdvanceTurn = useCallback(async () => {
-    if (!game) return;
+  // ---------------------------------------------------------------------------
+  // Derived
+  // ---------------------------------------------------------------------------
 
-    const currentGameId = game.id;
-    const currentPlayerId = game.jogador_atual_id;
-
-    await new Promise((resolve) => window.setTimeout(resolve, 150));
-
-    if (game.status === "finalizado" || game.status === "finished") {
-      await fetchGame(currentGameId);
-      await fetchPlayers(currentGameId);
-      return;
-    }
-
-    const { error } = await gameSupabase.rpc("proximo_turno", { p_jogo_id: currentGameId });
-    console.log("[Admin] proximo_turno RPC:", { error });
-
-    if (error) {
-      const { data: allPlayers } = await gameSupabase
-        .from("jogadores")
-        .select("id, pular_turno")
-        .eq("jogo_id", currentGameId)
-        .order("created_at", { ascending: true });
-
-      if (allPlayers && allPlayers.length > 0) {
-        const currentIdx = allPlayers.findIndex((p) => p.id === currentPlayerId);
-        let nextIdx = (currentIdx + 1) % allPlayers.length;
-        let attempts = 0;
-
-        while (attempts < allPlayers.length) {
-          if (allPlayers[nextIdx].pular_turno) {
-            await gameSupabase.from("jogadores").update({ pular_turno: false }).eq("id", allPlayers[nextIdx].id);
-            nextIdx = (nextIdx + 1) % allPlayers.length;
-            attempts++;
-          } else {
-            break;
-          }
-        }
-
-        await gameSupabase.from("jogos").update({ jogador_atual_id: allPlayers[nextIdx].id }).eq("id", currentGameId);
-      }
-    }
-
-    await fetchGame(currentGameId);
-    await fetchPlayers(currentGameId);
-  }, [game, fetchGame, fetchPlayers]);
-
-  const currentPlayer = players.find((p) => p.id === game?.jogador_atual_id);
-  const winner = players.find((p) => p.posicao >= 42);
   const gameStatus = game?.status ?? "aguardando";
+  const isWaiting = gameStatus === "aguardando" || gameStatus === "waiting";
+  const isPlaying = gameStatus === "em_andamento" || gameStatus === "playing";
+  const isFinished = gameStatus === "finalizado" || gameStatus === "finished";
+  const winner = players.find((p) => p.posicao >= 42);
+  useEffect(() => {
+  if (isFinished) setShowPodium(true);
+}, [isFinished]);
 
-  // Password gate
+  // ---------------------------------------------------------------------------
+  // Render: password gate
+  // ---------------------------------------------------------------------------
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
@@ -339,6 +297,10 @@ const [authenticated, setAuthenticated] = useState(false);
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Render: create game
+  // ---------------------------------------------------------------------------
+
   if (!game) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
@@ -357,23 +319,21 @@ const [authenticated, setAuthenticated] = useState(false);
           >
             {creating ? <span className="animate-pulse-slow">Criando...</span> : <><Plus className="w-7 h-7" />Criar Jogo</>}
           </button>
-          <button
-            onClick={() => navigate("/perguntas")}
-            className="inline-flex items-center gap-2 h-14 px-8 rounded-2xl bg-card border-2 border-border text-foreground text-lg font-display font-medium hover:border-primary/40 hover:bg-muted transition-all"
-          >
-            <FileSpreadsheet className="w-5 h-5" />
-            Banco de Perguntas
-          </button>
         </div>
       </div>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Render: main panel
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="min-h-screen flex flex-col px-4 py-4">
       <div className="w-full max-w-[1600px] mx-auto space-y-4">
+
         {/* Header: PIN + status */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <p className="text-muted-foreground font-body text-sm uppercase tracking-widest">PIN</p>
             <div className="text-5xl md:text-6xl font-display font-bold text-primary text-glow tracking-[0.3em] select-all">{game.pin}</div>
@@ -383,23 +343,9 @@ const [authenticated, setAuthenticated] = useState(false);
             >
               {copied ? <Check className="w-5 h-5 text-accent" /> : <Copy className="w-5 h-5" />}
             </button>
-            <button
-              onClick={() => navigate("/perguntas")}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all font-display font-medium text-sm"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Banco de Perguntas
-            </button>
           </div>
 
-          {(gameStatus === "em_andamento" || gameStatus === "playing") && currentPlayer && (
-            <div className="px-4 py-2 rounded-xl bg-accent/10 border border-accent/30 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-accent" />
-              <span className="text-accent font-display font-bold">Vez de: {currentPlayer.nickname}</span>
-            </div>
-          )}
-
-          {(gameStatus === "finalizado" || gameStatus === "finished") && winner && (
+          {isFinished && winner && (
             <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-primary" />
               <span className="text-primary font-display font-bold">🏆 {winner.nickname} venceu!</span>
@@ -407,15 +353,12 @@ const [authenticated, setAuthenticated] = useState(false);
           )}
         </div>
 
-        {/* Category selection (before starting) */}
-        {(gameStatus === "aguardando" || gameStatus === "waiting") && categories.length > 0 && (
+        {/* Category selection */}
+        {isWaiting && categories.length > 0 && (
           <div className="p-4 rounded-xl bg-card border border-border space-y-3">
             <div className="flex items-center justify-between">
               <p className="font-display font-bold text-foreground text-lg">📚 Categorias de Perguntas</p>
-              <button
-                onClick={selectAllCategories}
-                className="text-sm text-primary font-body hover:underline"
-              >
+              <button onClick={selectAllCategories} className="text-sm text-primary font-body hover:underline">
                 Selecionar todas
               </button>
             </div>
@@ -443,8 +386,8 @@ const [authenticated, setAuthenticated] = useState(false);
           </div>
         )}
 
-        {/* Tempo de resposta selector (before starting) */}
-        {(gameStatus === "aguardando" || gameStatus === "waiting") && (
+        {/* Tempo de resposta */}
+        {isWaiting && (
           <div className="p-4 rounded-xl bg-card border border-border space-y-3">
             <p className="font-display font-bold text-foreground text-lg">⏱️ Tempo para responder</p>
             <div className="flex flex-wrap gap-2">
@@ -453,46 +396,42 @@ const [authenticated, setAuthenticated] = useState(false);
                 { value: 60, label: "60 seg" },
                 { value: 120, label: "120 seg" },
                 { value: 180, label: "180 seg" },
-              ].map((opt) => {
-                const selected = tempoResposta === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    onClick={() => setTempoResposta(opt.value)}
-                    className={`px-4 py-2 rounded-xl font-body font-medium text-sm transition-all border ${
-                      selected
-                        ? "bg-primary text-primary-foreground border-primary shadow-[var(--shadow-glow)]"
-                        : "bg-card text-muted-foreground border-border hover:border-primary/40"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTempoResposta(opt.value)}
+                  className={`px-4 py-2 rounded-xl font-body font-medium text-sm transition-all border ${
+                    tempoResposta === opt.value
+                      ? "bg-primary text-primary-foreground border-primary shadow-[var(--shadow-glow)]"
+                      : "bg-card text-muted-foreground border-border hover:border-primary/40"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Main content: Board + Players side by side */}
+        {/* Board + Players */}
         <div className="flex gap-4">
           <div className="flex-1 min-w-0">
-            <WarehouseBoard3D players={players} currentPlayerId={game.jogador_atual_id} />
+            <WarehouseBoard3D players={players} currentPlayerId={null} />
           </div>
           <div className="w-72 shrink-0">
             <AdminPlayersPanel
               players={players}
-              currentPlayerId={game.jogador_atual_id}
-              gameFinished={gameStatus === "finalizado" || gameStatus === "finished"}
+              currentPlayerId={null}
+              gameFinished={isFinished}
               gameId={game.id}
               onPlayerRemoved={() => fetchPlayers(game.id)}
-              onAdvanceTurn={handleAdvanceTurn}
               vertical
             />
           </div>
         </div>
 
         {/* Start button */}
-        {(gameStatus === "aguardando" || gameStatus === "waiting") && (
+        {isWaiting && (
           <div className="flex justify-center pt-2">
             <button
               onClick={handleStartGame}
@@ -505,12 +444,19 @@ const [authenticated, setAuthenticated] = useState(false);
         )}
       </div>
 
-      {/* Question overlay */}
-      <AdminQuestionOverlay
-        gameId={game.id}
-        players={players}
-        onAdvanceTurn={handleAdvanceTurn}
-      />
+      {/* Overlay (perguntando / respondendo / resultado) */}
+      {isPlaying && (
+        <AdminQuestionOverlay
+          gameId={game.id}
+          players={players}
+        />
+      )}
+      {showPodium && (
+  <PodiumOverlay
+    players={players}
+    onClose={() => setShowPodium(false)}
+  />
+)}
     </div>
   );
 }
