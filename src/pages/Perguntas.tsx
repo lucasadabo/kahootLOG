@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+﻿import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Download, Upload, Trash2, CheckSquare, Square,
@@ -171,7 +171,7 @@ export default function Perguntas() {
     } catch {
       setSaveStatus({ id, field, status: "error" });
       saveStatusTimerRef.current = window.setTimeout(() => setSaveStatus(null), 3000);
-      showToast("error", "Erro ao salvar alteração.");
+      showToast("error", "Erro ao salvar altera├º├úo.");
     }
   };
 
@@ -223,7 +223,7 @@ export default function Perguntas() {
 
   const processFile = async (file: File) => {
     if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
-      showToast("error", "Apenas arquivos .xlsx ou .xls são aceitos."); return;
+      showToast("error", "Apenas arquivos .xlsx ou .xls s├úo aceitos."); return;
     }
     setUploading(true);
     try {
@@ -244,7 +244,7 @@ export default function Perguntas() {
           categoria: r.categoria ? String(r.categoria).trim() : null,
           dificuldade: r.dificuldade ? String(r.dificuldade).trim() : null,
         }));
-      if (inserts.length === 0) { showToast("error", "Nenhuma linha válida. Verifique os títulos das colunas."); return; }
+      if (inserts.length === 0) { showToast("error", "Nenhuma linha v├ílida. Verifique os t├¡tulos das colunas."); return; }
       const { error } = await gameSupabase.from("perguntas").insert(inserts);
       if (error) throw error;
       showToast("success", `${inserts.length} pergunta(s) inserida(s)!`);
@@ -272,7 +272,7 @@ export default function Perguntas() {
   };
   const handleDelete = async () => {
     if (selected.size === 0) return;
-    if (!window.confirm(`Deletar ${selected.size} pergunta(s)? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`Deletar ${selected.size} pergunta(s)? Esta a├º├úo n├úo pode ser desfeita.`)) return;
     setDeleting(true);
     try {
       const { error } = await gameSupabase.from("perguntas").delete().in("id", Array.from(selected));
@@ -307,7 +307,7 @@ export default function Perguntas() {
             onKeyDown={(e) => handleCellKeyDown(e, p.id, field)}
             rows={3} className="w-full min-w-[200px] px-2 py-1 rounded-lg bg-background border-2 border-primary text-foreground font-body text-sm focus:outline-none resize-y" />
         )}
-        <p className="text-xs text-muted-foreground mt-1">Enter salva • Esc cancela</p>
+        <p className="text-xs text-muted-foreground mt-1">Enter salva ÔÇó Esc cancela</p>
       </div>
     );
 
@@ -315,7 +315,7 @@ export default function Perguntas() {
       <div className="relative group cursor-text min-h-[2rem] flex items-start gap-1"
         onClick={(e) => { e.stopPropagation(); startEdit(p, field); }} title="Clique para editar">
         <span className="whitespace-pre-wrap break-words text-foreground">
-          {String(p[field] ?? "") || <span className="text-muted-foreground/40 italic text-xs">—</span>}
+          {String(p[field] ?? "") || <span className="text-muted-foreground/40 italic text-xs">ÔÇö</span>}
         </span>
         {isSaving && <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0 mt-0.5" />}
         {isSaved  && <CheckCircle2 className="w-3 h-3 text-accent shrink-0 mt-0.5 animate-in zoom-in duration-200" />}
@@ -349,7 +349,7 @@ export default function Perguntas() {
           <div>
             <h1 className="text-3xl font-display font-bold text-primary text-glow">Banco de Perguntas</h1>
             <p className="text-muted-foreground font-body text-sm">
-              {total} pergunta(s) cadastrada(s) • Clique em qualquer célula para editar
+              {total} pergunta(s) cadastrada(s) ÔÇó Clique em qualquer c├®lula para editar
             </p>
           </div>
         </div>
@@ -361,7 +361,7 @@ export default function Perguntas() {
               <FileSpreadsheet className="w-5 h-5 text-primary" />
               <p className="font-display font-bold text-foreground">Modelo de Planilha</p>
             </div>
-            <p className="text-muted-foreground font-body text-sm">Baixe o modelo, preencha e faça o upload abaixo.</p>
+            <p className="text-muted-foreground font-body text-sm">Baixe o modelo, preencha e fa├ºa o upload abaixo.</p>
             <button onClick={handleDownloadTemplate}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-display font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all">
               <Download className="w-4 h-4" /> Baixar modelo .xlsx
@@ -537,8 +537,8 @@ export default function Perguntas() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-5 py-4 border-t border-border">
               <p className="text-muted-foreground font-body text-sm">
-                Página {page + 1} de {totalPages} — {total} perguntas
-                {search && ` • ${displayedPerguntas.length} resultado(s)`}
+                P├ígina {page + 1} de {totalPages} ÔÇö {total} perguntas
+                {search && ` ÔÇó ${displayedPerguntas.length} resultado(s)`}
               </p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
