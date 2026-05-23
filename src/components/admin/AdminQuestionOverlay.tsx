@@ -34,6 +34,7 @@ type FaseRodada = "rolando_dado" | "perguntando" | "respondendo" | "resultado";
 interface AdminQuestionOverlayProps {
   gameId: string;
   players: { id: string; nickname: string; cor_empilhadeira: string; posicao: number }[];
+  onFaseChange?: (fase: FaseRodada) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ function playMovementSound() {
 // Component
 // ---------------------------------------------------------------------------
 
-export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayProps) {
+export function AdminQuestionOverlay({ gameId, players, onFaseChange }: AdminQuestionOverlayProps) {
   const [fase, setFase] = useState<FaseRodada>("rolando_dado");
   const [pergunta, setPergunta] = useState<Pergunta | null>(null);
   const [playerResults, setPlayerResults] = useState<PlayerResult[]>([]);
@@ -125,6 +126,7 @@ export function AdminQuestionOverlay({ gameId, players }: AdminQuestionOverlayPr
     prevPerguntaIdRef.current = novaPerguntaId;
 
     setFase(novaFase);
+    if (faseChanged) onFaseChange?.(novaFase);
 
     if ((novaFase === "perguntando" || novaFase === "respondendo") && novaPerguntaId) {
       if (faseChanged || perguntaChanged) {
@@ -243,10 +245,7 @@ const handleNextRound = async () => {
   // Render: only shows overlay for perguntando / respondendo / resultado
   // ---------------------------------------------------------------------------
 
-// DEPOIS
-const showOverlay = fase === "perguntando" || fase === "respondendo" || fase === "resultado";
-
-// Caso especial: fase rolando_dado mostra só o botão de força (sem pergunta)
+// Fase rolando_dado: só botão de força no canto
 if (fase === "rolando_dado") {
   return (
     <div className="fixed bottom-6 right-6 z-50">
@@ -261,7 +260,76 @@ if (fase === "rolando_dado") {
   );
 }
 
-if (!showOverlay || !pergunta) return null;
+// Fase resultado: painel compacto no canto — tabuleiro fica visível
+if (fase === "resultado") {
+  return (
+    <div className="fixed bottom-6 right-6 z-50 w-full max-w-sm animate-in slide-in-from-bottom-4 duration-300">
+      <div className="rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-primary/10">
+          <CheckCircle2 className="w-5 h-5 text-primary" />
+          <p className="font-display font-bold text-foreground">Resultado da Rodada</p>
+        </div>
+
+        <div className="p-4 space-y-3">
+
+          {/* Acertaram */}
+          {acertaram.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-display font-bold text-accent uppercase tracking-wider flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Acertaram ({acertaram.length})
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {acertaram.map((p) => (
+                  <div key={p.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-accent/10 border border-accent/30 text-xs font-display">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.cor_empilhadeira }} />
+                    <span className="text-foreground font-medium">{p.nickname}</span>
+                    <span className="text-muted-foreground">🎲{p.dado_rodada_atual}</span>
+                    <span className="text-accent font-bold">→ casa {p.posicao}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Erraram */}
+          {erraram.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-display font-bold text-destructive uppercase tracking-wider flex items-center gap-1">
+                <XCircle className="w-3.5 h-3.5" /> Erraram / Timeout ({erraram.length})
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {erraram.map((p) => (
+                  <div key={p.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs font-display">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.cor_empilhadeira }} />
+                    <span className="text-foreground font-medium">{p.nickname}</span>
+                    <span className="text-muted-foreground">casa {p.posicao}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Botão próxima rodada */}
+          <button
+            onClick={handleNextRound}
+            disabled={advancing}
+            className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-display font-bold text-base shadow-[var(--shadow-glow)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {advancing
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Avançando...</>
+              : <><ChevronRight className="w-4 h-4" />Próxima Rodada</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Fases perguntando / respondendo: overlay fullscreen com a pergunta
+if (!pergunta) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -283,7 +351,7 @@ if (!showOverlay || !pergunta) return null;
           </div>
 
           {/* Timer */}
-          {tempoRestante !== null && fase !== "resultado" && (
+          {tempoRestante !== null && (
             <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-colors ${
               timerLow
                 ? "bg-destructive/10 border-destructive/50 animate-pulse"
@@ -305,129 +373,60 @@ if (!showOverlay || !pergunta) return null;
             {pergunta.texto}
           </p>
 
-          {/* Alternativas com resposta destacada se fase=resultado */}
+          {/* Alternativas */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(["A", "B", "C", "D"] as const).map((letter) => {
               const fieldKey = `alternativa_${letter.toLowerCase()}` as keyof Pergunta;
-              const isCorreta = letter.toUpperCase() === pergunta.resposta_correta.toUpperCase();
               return (
                 <div
                   key={letter}
-                  className={`p-4 rounded-xl border font-body text-foreground transition-all ${
-                    fase === "resultado" && isCorreta
-                      ? "bg-accent/15 border-accent/60 ring-1 ring-accent/30"
-                      : "border-border bg-background/50"
-                  }`}
+                  className="p-4 rounded-xl border border-border bg-background/50 font-body text-foreground"
                 >
-                  <span className={`font-display font-bold mr-2 ${fase === "resultado" && isCorreta ? "text-accent" : "text-primary"}`}>
+                  <span className="font-display font-bold mr-2 text-primary">
                     {letter})
                   </span>
                   {pergunta[fieldKey]}
-                  {fase === "resultado" && isCorreta && (
-                    <CheckCircle2 className="inline-block w-4 h-4 text-accent ml-2 mb-0.5" />
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* ── Aguardando respostas ── */}
-          {(fase === "perguntando" || fase === "respondendo") && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm font-body text-muted-foreground">
-                <span>Aguardando respostas...</span>
-                <span className="font-bold text-foreground">{jaResponderam}/{totalJogadores}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {playerResults.map((p) => (
-                  <div
-                    key={p.id}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-display font-medium border transition-all ${
-                      p.respondeu_rodada_atual
-                        ? p.acertou_rodada_atual
-                          ? "bg-accent/10 border-accent/30 text-accent"
-                          : "bg-destructive/10 border-destructive/30 text-destructive"
-                        : "bg-card border-border text-muted-foreground"
-                    }`}
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.cor_empilhadeira }} />
-                    {p.nickname}
-                    {p.dado_rodada_atual != null && (
-                      <span className="text-xs font-body opacity-70">🎲{p.dado_rodada_atual}</span>
-                    )}
-                    {p.respondeu_rodada_atual
+          {/* Aguardando respostas */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-body text-muted-foreground">
+              <span>Aguardando respostas...</span>
+              <span className="font-bold text-foreground">{jaResponderam}/{totalJogadores}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {playerResults.map((p) => (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-display font-medium border transition-all ${
+                    p.respondeu_rodada_atual
                       ? p.acertou_rodada_atual
-                        ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                        : <XCircle className="w-3.5 h-3.5 shrink-0" />
-                      : <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin opacity-50" />
-                    }
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Resultado completo ── */}
-          {fase === "resultado" && (
-            <div className="space-y-4 animate-in zoom-in-95 duration-300">
-
-              {/* Acertaram */}
-              {acertaram.length > 0 && (
-                <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-accent" />
-                    <span className="font-display font-bold text-accent">Acertaram ({acertaram.length})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {acertaram.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-accent/20 text-sm font-display">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.cor_empilhadeira }} />
-                        <span className="text-foreground font-medium">{p.nickname}</span>
-                        <span className="text-muted-foreground text-xs">🎲{p.dado_rodada_atual}</span>
-                        <span className="text-accent text-xs font-bold">→ casa {p.posicao}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Erraram */}
-              {erraram.length > 0 && (
-                <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/20 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <XCircle className="w-5 h-5 text-destructive" />
-                    <span className="font-display font-bold text-destructive">Erraram / Timeout ({erraram.length})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {erraram.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-destructive/20 text-sm font-display">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.cor_empilhadeira }} />
-                        <span className="text-foreground font-medium">{p.nickname}</span>
-                        <span className="text-muted-foreground text-xs">casa {p.posicao}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Botão próxima rodada */}
-              <div className="flex justify-center pt-2">
-                <button
-                  onClick={handleNextRound}
-                  disabled={advancing}
-                  className="inline-flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-primary-foreground font-display font-bold text-lg shadow-[var(--shadow-glow)] hover:scale-[1.03] active:scale-[0.97] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        ? "bg-accent/10 border-accent/30 text-accent"
+                        : "bg-destructive/10 border-destructive/30 text-destructive"
+                      : "bg-card border-border text-muted-foreground"
+                  }`}
                 >
-                  {advancing
-                    ? <><Loader2 className="w-5 h-5 animate-spin" />Avançando...</>
-                    : <><ChevronRight className="w-5 h-5" />Próxima Rodada</>
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.cor_empilhadeira }} />
+                  {p.nickname}
+                  {p.dado_rodada_atual != null && (
+                    <span className="text-xs font-body opacity-70">🎲{p.dado_rodada_atual}</span>
+                  )}
+                  {p.respondeu_rodada_atual
+                    ? p.acertou_rodada_atual
+                      ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      : <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    : <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin opacity-50" />
                   }
-                </button>
-              </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
 
-          {/* Forçar próxima rodada durante resposta (escape hatch pro professor) */}
-          {(fase === "perguntando" || fase === "respondendo") && !todosResponderam && (
+          {/* Forçar próxima rodada (escape hatch pro professor) */}
+          {!todosResponderam && (
             <div className="flex justify-center">
               <button
                 onClick={handleNextRound}

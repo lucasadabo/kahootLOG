@@ -11,6 +11,7 @@ interface Player {
 interface WarehouseBoard3DProps {
   players: Player[];
   currentPlayerId: string | null;
+  displayPositions?: Map<string, number>; // quando presente, usa estas posições em vez de player.posicao
 }
 
 interface BoardPoint {
@@ -157,15 +158,18 @@ function MiniForklift({ color, nickname, active }: { color: string; nickname: st
   );
 }
 
-export function WarehouseBoard3D({ players, currentPlayerId }: WarehouseBoard3DProps) {
+export function WarehouseBoard3D({ players, currentPlayerId, displayPositions }: WarehouseBoard3DProps) {
   const playersByPosition = useMemo(() => {
     const grouped = new Map<number, Player[]>();
     players.forEach((player) => {
-      const key = Math.max(0, Math.min(CELL_COUNT, player.posicao));
-      grouped.set(key, [...(grouped.get(key) ?? []), player]);
+      const pos = displayPositions?.has(player.id)
+        ? displayPositions.get(player.id)!
+        : player.posicao;
+      const key = Math.max(0, Math.min(CELL_COUNT, pos));
+      grouped.set(key, [...(grouped.get(key) ?? []), { ...player, posicao: pos }]);
     });
     return grouped;
-  }, [players]);
+  }, [players, displayPositions]);
 
   return (
     <div className="rounded-[2rem] border border-border bg-card/70 shadow-[var(--shadow-card)] overflow-hidden">

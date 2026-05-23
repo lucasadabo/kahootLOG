@@ -36,14 +36,17 @@ export default function Admin() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [tempoResposta, setTempoResposta] = useState<number>(0);
   const [showPodium, setShowPodium] = useState(false);
+  const [positionSnapshot, setPositionSnapshot] = useState<Map<string, number> | null>(null);
 
   
   const selectedCategoriesRef = useRef<string[]>([]);
   const tempoRespostaRef = useRef<number>(0);
   const configChannelRef = useRef<ReturnType<typeof gameSupabase.channel> | null>(null);
+  const playersRef = useRef<Player[]>([]);
 
   useEffect(() => { selectedCategoriesRef.current = Array.from(selectedCategories); }, [selectedCategories]);
   useEffect(() => { tempoRespostaRef.current = tempoResposta; }, [tempoResposta]);
+  useEffect(() => { playersRef.current = players; }, [players]);
   
 
   const fetchGame = useCallback(async (gameId: string) => {
@@ -247,6 +250,17 @@ export default function Admin() {
 
   const selectAllCategories = () => setSelectedCategories(new Set(categories));
 
+  // Quando a fase vira "rolando_dado" (início de nova rodada), guarda snapshot
+  // das posições atuais. O tabuleiro usa esse snapshot durante perguntando/respondendo
+  // para manter as empilhadeiras paradas, revelando o movimento só no resultado.
+  const handleFaseChange = useCallback((fase: string) => {
+    if (fase === "rolando_dado") {
+      setPositionSnapshot(new Map(playersRef.current.map((p) => [p.id, p.posicao])));
+    } else if (fase === "resultado") {
+      setPositionSnapshot(null);
+    }
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
@@ -416,7 +430,7 @@ export default function Admin() {
         {/* Board + Players */}
         <div className="flex gap-4">
           <div className="flex-1 min-w-0">
-            <WarehouseBoard3D players={players} currentPlayerId={null} />
+            <WarehouseBoard3D players={players} currentPlayerId={null} displayPositions={positionSnapshot ?? undefined} />
           </div>
           <div className="w-72 shrink-0">
             <AdminPlayersPanel
@@ -449,6 +463,7 @@ export default function Admin() {
         <AdminQuestionOverlay
           gameId={game.id}
           players={players}
+          onFaseChange={handleFaseChange}
         />
       )}
       {showPodium && (
