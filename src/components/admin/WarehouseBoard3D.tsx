@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import boardImage from "./tabuleiro_vazio5.png";
 
 interface Player {
@@ -158,18 +158,85 @@ function MiniForklift({ color, nickname, active }: { color: string; nickname: st
   );
 }
 
+const STEP_INTERVAL_MS = 300; // tempo entre cada casa durante a animação
+
 export function WarehouseBoard3D({ players, currentPlayerId, displayPositions }: WarehouseBoard3DProps) {
+  // animatedPositions: posições que o tabuleiro realmente renderiza.
+  // Quando displayPositions existe (overlay aberto), congela nas posições do snapshot.
+  // Quando displayPositions some (resultado), anima casa a casa até player.posicao.
+  const [animatedPositions, setAnimatedPositions] = useState<Map<string, number>>(
+    () => new Map(players.map((p) => [p.id, p.posicao]))
+  );
+
+  const animationRef = useRef<number | null>(null);
+  const prevDisplayPositions = useRef<Map<string, number> | undefined>(undefined);
+
+  useEffect(() => {
+    const wasFrozen = prevDisplayPositions.current !== undefined;
+    const isNowFree = displayPositions === undefined;
+    prevDisplayPositions.current = displayPositions;
+
+    // Se o snapshot chegou, congela imediatamente nas posições do snapshot
+    if (displayPositions !== undefined) {
+      if (animationRef.current) window.clearInterval(animationRef.current);
+      setAnimatedPositions(new Map(displayPositions));
+      return;
+    }
+
+    // Se o snapshot foi removido (fase resultado), anima casa a casa
+    if (wasFrozen && isNowFree) {
+      // Monta mapa de destinos (posições reais)
+      const targets = new Map(players.map((p) => [p.id, p.posicao]));
+
+      if (animationRef.current) window.clearInterval(animationRef.current);
+
+      animationRef.current = window.setInterval(() => {
+        setAnimatedPositions((prev) => {
+          const next = new Map(prev);
+          let allDone = true;
+
+          targets.forEach((target, id) => {
+            const current = next.get(id) ?? target;
+            if (current < target) {
+              next.set(id, current + 1);
+              allDone = false;
+            } else {
+              next.set(id, target);
+            }
+          });
+
+          if (allDone && animationRef.current) {
+            window.clearInterval(animationRef.current);
+            animationRef.current = null;
+          }
+
+          return next;
+        });
+      }, STEP_INTERVAL_MS);
+
+      return;
+    }
+
+    // Sem animação em curso: sincroniza direto (início do jogo, nova rodada parada)
+    if (!animationRef.current) {
+      setAnimatedPositions(new Map(players.map((p) => [p.id, p.posicao])));
+    }
+  }, [displayPositions, players]);
+
+  // Cleanup ao desmontar
+  useEffect(() => () => {
+    if (animationRef.current) window.clearInterval(animationRef.current);
+  }, []);
+
   const playersByPosition = useMemo(() => {
     const grouped = new Map<number, Player[]>();
     players.forEach((player) => {
-      const pos = displayPositions?.has(player.id)
-        ? displayPositions.get(player.id)!
-        : player.posicao;
+      const pos = animatedPositions.get(player.id) ?? player.posicao;
       const key = Math.max(0, Math.min(CELL_COUNT, pos));
       grouped.set(key, [...(grouped.get(key) ?? []), { ...player, posicao: pos }]);
     });
     return grouped;
-  }, [players, displayPositions]);
+  }, [players, animatedPositions]);
 
   return (
     <div className="rounded-[2rem] border border-border bg-card/70 shadow-[var(--shadow-card)] overflow-hidden">
