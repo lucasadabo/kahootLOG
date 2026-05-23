@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+﻿import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Download, Upload, Trash2, CheckSquare, Square,
@@ -54,8 +54,14 @@ const EMPTY_NEW_ROW: NewRow = {
   alternativa_d: "", correta: "", categoria: "", dificuldade: "",
 };
 
+const ADMIN_PASSWORD = "teste123";
+
 export default function Perguntas() {
   const navigate = useNavigate();
+
+  const [authenticated, setAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
 
   const [perguntas, setPerguntas] = useState<Pergunta[]>([]);
   const [total, setTotal] = useState(0);
@@ -74,10 +80,13 @@ export default function Perguntas() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
 
-  // Search & sort (client-side on current page)
+  // Search, sort & category filter — server-side
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState(""); // debounce buffer
   const [sortField, setSortField] = useState<SortField>("categoria");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
 
   // New row
   const [showNewRow, setShowNewRow] = useState(false);
@@ -89,15 +98,49 @@ export default function Perguntas() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Debounce search input
+  useEffect(() => {
+    const t = window.setTimeout(() => { setSearch(searchInput); setPage(0); }, 400);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  // Fetch all categories once (for the dropdown)
+  const fetchCategories = useCallback(async () => {
+    const { data } = await gameSupabase.from("perguntas").select("categoria");
+    if (data) {
+      const cats = [...new Set(data.map((r: any) => r.categoria ?? "").filter(Boolean))].sort();
+      setAvailableCategories(cats as string[]);
+    }
+  }, []);
+
+  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+
   const fetchPerguntas = useCallback(async () => {
     setLoading(true);
     try {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
-      const { data, error, count } = await gameSupabase
+
+      let query = gameSupabase
         .from("perguntas")
-        .select("*", { count: "exact" })
-        .range(from, to);
+        .select("*", { count: "exact" });
+
+      if (categoryFilter) {
+        query = query.eq("categoria", categoryFilter);
+      }
+
+      if (search.trim()) {
+        // Supabase ilike for text search across pergunta field
+        query = query.ilike("pergunta", `%${search.trim()}%`);
+      }
+
+      if (sortField) {
+        query = query.order(sortField as string, { ascending: sortDir === "asc" });
+      }
+
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
       if (error) throw error;
       setPerguntas(data ?? []);
       setTotal(count ?? 0);
@@ -107,31 +150,12 @@ export default function Perguntas() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, search, categoryFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPerguntas(); }, [fetchPerguntas]);
 
-  // Client-side search + sort
-  const displayedPerguntas = useMemo(() => {
-    let rows = [...perguntas];
-
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter((p) =>
-        COLUMNS.some((col) => String(p[col.field] ?? "").toLowerCase().includes(q))
-      );
-    }
-
-    if (sortField) {
-      rows.sort((a, b) => {
-        const av = String(a[sortField] ?? "").toLowerCase();
-        const bv = String(b[sortField] ?? "").toLowerCase();
-        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-      });
-    }
-
-    return rows;
-  }, [perguntas, search, sortField, sortDir]);
+  // displayedPerguntas is now just the server-filtered list
+  const displayedPerguntas = perguntas;
 
   const handleSort = (field: keyof Pergunta) => {
     if (sortField === field) {
@@ -140,6 +164,7 @@ export default function Perguntas() {
       setSortField(field);
       setSortDir("asc");
     }
+    setPage(0);
   };
 
   const SortIcon = ({ field }: { field: keyof Pergunta }) => {
@@ -171,7 +196,7 @@ export default function Perguntas() {
     } catch {
       setSaveStatus({ id, field, status: "error" });
       saveStatusTimerRef.current = window.setTimeout(() => setSaveStatus(null), 3000);
-      showToast("error", "Erro ao salvar altera├º├úo.");
+      showToast("error", "Erro ao salvar alteração.");
     }
   };
 
@@ -223,7 +248,7 @@ export default function Perguntas() {
 
   const processFile = async (file: File) => {
     if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
-      showToast("error", "Apenas arquivos .xlsx ou .xls s├úo aceitos."); return;
+      showToast("error", "Apenas arquivos .xlsx ou .xls são aceitos."); return;
     }
     setUploading(true);
     try {
@@ -244,7 +269,7 @@ export default function Perguntas() {
           categoria: r.categoria ? String(r.categoria).trim() : null,
           dificuldade: r.dificuldade ? String(r.dificuldade).trim() : null,
         }));
-      if (inserts.length === 0) { showToast("error", "Nenhuma linha v├ílida. Verifique os t├¡tulos das colunas."); return; }
+      if (inserts.length === 0) { showToast("error", "Nenhuma linha válida. Verifique os títulos das colunas."); return; }
       const { error } = await gameSupabase.from("perguntas").insert(inserts);
       if (error) throw error;
       showToast("success", `${inserts.length} pergunta(s) inserida(s)!`);
@@ -272,15 +297,35 @@ export default function Perguntas() {
   };
   const handleDelete = async () => {
     if (selected.size === 0) return;
-    if (!window.confirm(`Deletar ${selected.size} pergunta(s)? Esta a├º├úo n├úo pode ser desfeita.`)) return;
+    if (!window.confirm(`Deletar ${selected.size} pergunta(s)? Esta ação não pode ser desfeita.`)) return;
     setDeleting(true);
     try {
       const { error } = await gameSupabase.from("perguntas").delete().in("id", Array.from(selected));
       if (error) throw error;
       showToast("success", `${selected.size} pergunta(s) deletada(s).`);
-      setPage(0); fetchPerguntas();
+      setPage(0); fetchPerguntas(); fetchCategories();
     } catch { showToast("error", "Erro ao deletar perguntas."); }
     finally { setDeleting(false); }
+  };
+
+  const handleDeleteByCategory = async () => {
+    if (!categoryFilter) return;
+    const count = displayedPerguntas.length;
+    if (!window.confirm(`Deletar todas as ${count} perguntas da categoria "${categoryFilter}"? Esta ação não pode ser desfeita.`)) return;
+    setDeleting(true);
+    try {
+      const { error } = await gameSupabase.from("perguntas").delete().eq("categoria", categoryFilter);
+      if (error) throw error;
+      showToast("success", `${count} pergunta(s) da categoria "${categoryFilter}" deletada(s).`);
+      setCategoryFilter("");
+      setPage(0);
+      fetchPerguntas();
+      fetchCategories();
+    } catch {
+      showToast("error", "Erro ao deletar perguntas.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -307,7 +352,7 @@ export default function Perguntas() {
             onKeyDown={(e) => handleCellKeyDown(e, p.id, field)}
             rows={3} className="w-full min-w-[200px] px-2 py-1 rounded-lg bg-background border-2 border-primary text-foreground font-body text-sm focus:outline-none resize-y" />
         )}
-        <p className="text-xs text-muted-foreground mt-1">Enter salva ÔÇó Esc cancela</p>
+        <p className="text-xs text-muted-foreground mt-1">Enter salva • Esc cancela</p>
       </div>
     );
 
@@ -315,7 +360,7 @@ export default function Perguntas() {
       <div className="relative group cursor-text min-h-[2rem] flex items-start gap-1"
         onClick={(e) => { e.stopPropagation(); startEdit(p, field); }} title="Clique para editar">
         <span className="whitespace-pre-wrap break-words text-foreground">
-          {String(p[field] ?? "") || <span className="text-muted-foreground/40 italic text-xs">ÔÇö</span>}
+          {String(p[field] ?? "") || <span className="text-muted-foreground/40 italic text-xs">—</span>}
         </span>
         {isSaving && <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0 mt-0.5" />}
         {isSaved  && <CheckCircle2 className="w-3 h-3 text-accent shrink-0 mt-0.5 animate-in zoom-in duration-200" />}
@@ -326,6 +371,38 @@ export default function Perguntas() {
       </div>
     );
   };
+
+  // Password gate
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20">
+            <FileSpreadsheet className="w-10 h-10 text-primary" />
+          </div>
+          <h1 className="text-3xl font-display font-bold text-primary text-glow">Banco de Perguntas</h1>
+          <p className="text-muted-foreground font-body">Digite a senha para acessar</p>
+          <div className="space-y-3">
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { passwordInput === ADMIN_PASSWORD ? setAuthenticated(true) : setPasswordError(true); }}}
+              placeholder="Senha"
+              className="w-full h-14 px-4 rounded-xl bg-card border-2 border-border text-foreground font-body text-lg text-center tracking-widest focus:border-primary focus:outline-none transition-colors"
+            />
+            {passwordError && <p className="text-destructive font-body text-sm">Senha incorreta. Tente novamente.</p>}
+            <button
+              onClick={() => { passwordInput === ADMIN_PASSWORD ? setAuthenticated(true) : setPasswordError(true); }}
+              className="w-full h-14 rounded-xl bg-primary text-primary-foreground font-display font-bold text-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              Entrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col px-4 py-6 bg-background">
@@ -349,7 +426,7 @@ export default function Perguntas() {
           <div>
             <h1 className="text-3xl font-display font-bold text-primary text-glow">Banco de Perguntas</h1>
             <p className="text-muted-foreground font-body text-sm">
-              {total} pergunta(s) cadastrada(s) ÔÇó Clique em qualquer c├®lula para editar
+              {total} pergunta(s) cadastrada(s) • Clique em qualquer célula para editar
             </p>
           </div>
         </div>
@@ -361,7 +438,7 @@ export default function Perguntas() {
               <FileSpreadsheet className="w-5 h-5 text-primary" />
               <p className="font-display font-bold text-foreground">Modelo de Planilha</p>
             </div>
-            <p className="text-muted-foreground font-body text-sm">Baixe o modelo, preencha e fa├ºa o upload abaixo.</p>
+            <p className="text-muted-foreground font-body text-sm">Baixe o modelo, preencha e faça o upload abaixo.</p>
             <button onClick={handleDownloadTemplate}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-display font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all">
               <Download className="w-4 h-4" /> Baixar modelo .xlsx
@@ -400,17 +477,40 @@ export default function Perguntas() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Category filter */}
+              {availableCategories.length > 0 && (
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => { setCategoryFilter(e.target.value); setSelected(new Set()); }}
+                  className="px-3 py-2 rounded-xl bg-background border border-border text-foreground font-body text-sm focus:border-primary focus:outline-none transition-colors"
+                >
+                  <option value="">Todas as categorias</option>
+                  {availableCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Delete entire category */}
+              {categoryFilter && (
+                <button onClick={handleDeleteByCategory} disabled={deleting}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive font-display font-bold text-sm hover:bg-destructive/20 transition-all disabled:opacity-50">
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {deleting ? "Deletando..." : `Deletar categoria "${categoryFilter}"`}
+                </button>
+              )}
+
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   placeholder="Buscar..."
                   className="pl-9 pr-8 py-2 rounded-xl bg-background border border-border text-foreground font-body text-sm focus:border-primary focus:outline-none transition-colors w-48"
                 />
-                {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {searchInput && (
+                  <button onClick={() => { setSearchInput(""); setSearch(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     <X className="w-3 h-3" />
                   </button>
                 )}
@@ -537,8 +637,8 @@ export default function Perguntas() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-5 py-4 border-t border-border">
               <p className="text-muted-foreground font-body text-sm">
-                P├ígina {page + 1} de {totalPages} ÔÇö {total} perguntas
-                {search && ` ÔÇó ${displayedPerguntas.length} resultado(s)`}
+                Página {page + 1} de {totalPages} — {total} perguntas
+                {search && ` • ${displayedPerguntas.length} resultado(s)`}
               </p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}

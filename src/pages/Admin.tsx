@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Monitor, Play, Plus, Copy, Check, Trophy, Lock, Volume2, VolumeX } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Lock, Volume2, VolumeX, BookOpen } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
@@ -22,6 +23,7 @@ interface Game {
 const ADMIN_PASSWORD = "teste123";
 
 export default function Admin() {
+  const navigate = useNavigate();
   const [authenticated, setAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
@@ -383,13 +385,22 @@ export default function Admin() {
             <h1 className="text-4xl font-display font-bold text-primary text-glow">Painel do Professor</h1>
             <p className="text-muted-foreground font-body text-lg">Crie um jogo e compartilhe o PIN com seus alunos</p>
           </div>
-          <button
-            onClick={handleCreateGame}
-            disabled={creating}
-            className="inline-flex items-center gap-3 h-20 px-12 rounded-2xl bg-primary text-primary-foreground text-2xl font-display font-bold shadow-[var(--shadow-glow)] hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:hover:scale-100"
-          >
-            {creating ? <span className="animate-pulse-slow">Criando...</span> : <><Plus className="w-7 h-7" />Criar Jogo</>}
-          </button>
+          <div className="flex flex-col items-center gap-4">
+            <button
+              onClick={handleCreateGame}
+              disabled={creating}
+              className="inline-flex items-center gap-3 h-20 px-12 rounded-2xl bg-primary text-primary-foreground text-2xl font-display font-bold shadow-[var(--shadow-glow)] hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:hover:scale-100"
+            >
+              {creating ? <span className="animate-pulse-slow">Criando...</span> : <><Plus className="w-7 h-7" />Criar Jogo</>}
+            </button>
+            <button
+              onClick={() => navigate("/perguntas")}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/40 transition-all font-display font-bold text-sm"
+            >
+              <BookOpen className="w-4 h-4" />
+              Banco de Perguntas
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -417,6 +428,16 @@ export default function Admin() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Botão perguntas */}
+            <button
+              onClick={() => navigate("/perguntas")}
+              title="Banco de Perguntas"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/40 transition-all font-display font-bold text-sm"
+            >
+              <BookOpen className="w-4 h-4" />
+              Perguntas
+            </button>
+
             {/* Botão mute/unmute música */}
             <button
               onClick={handleToggleMute}
