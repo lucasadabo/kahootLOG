@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Monitor, Play, Plus, Copy, Check, Trophy, Lock } from "lucide-react";
+import { Monitor, Play, Plus, Copy, Check, Trophy, Lock, Volume2, VolumeX } from "lucide-react";
 import { WarehouseBoard3D } from "@/components/admin/WarehouseBoard3D";
 import { AdminPlayersPanel } from "@/components/admin/AdminPlayersPanel";
 import { AdminQuestionOverlay } from "@/components/admin/AdminQuestionOverlay";
@@ -37,6 +37,11 @@ export default function Admin() {
   const [tempoResposta, setTempoResposta] = useState<number>(0);
   const [showPodium, setShowPodium] = useState(false);
   const [positionSnapshot, setPositionSnapshot] = useState<Map<string, number> | null>(null);
+  const [muted, setMuted] = useState(false);
+
+  const lobbyAudioRef = useRef<HTMLAudioElement | null>(null);
+  const questionAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mutedRef = useRef(false);
 
   
   const selectedCategoriesRef = useRef<string[]>([]);
@@ -47,6 +52,24 @@ export default function Admin() {
   useEffect(() => { selectedCategoriesRef.current = Array.from(selectedCategories); }, [selectedCategories]);
   useEffect(() => { tempoRespostaRef.current = tempoResposta; }, [tempoResposta]);
   useEffect(() => { playersRef.current = players; }, [players]);
+
+  // Inicializa os elementos de áudio uma única vez
+  useEffect(() => {
+    const lobby = new Audio("/LobbyMusic.mp3");
+    lobby.loop = true;
+    lobby.volume = 0.5;
+    lobbyAudioRef.current = lobby;
+
+    const question = new Audio("/QuestionMusic.mp3");
+    question.loop = true;
+    question.volume = 0.5;
+    questionAudioRef.current = question;
+
+    return () => {
+      lobby.pause();
+      question.pause();
+    };
+  }, []);
   
 
   const fetchGame = useCallback(async (gameId: string) => {
@@ -270,13 +293,47 @@ export default function Admin() {
   const isPlaying = gameStatus === "em_andamento" || gameStatus === "playing";
   const isFinished = gameStatus === "finalizado" || gameStatus === "finished";
   const winner = players.find((p) => p.posicao >= 42);
-  useEffect(() => {
-  if (isFinished) setShowPodium(true);
-}, [isFinished]);
 
-  // ---------------------------------------------------------------------------
-  // Render: password gate
-  // ---------------------------------------------------------------------------
+  // Troca a música conforme o status do jogo
+  useEffect(() => {
+    const lobby = lobbyAudioRef.current;
+    const question = questionAudioRef.current;
+    if (!lobby || !question) return;
+
+    if (isWaiting) {
+      question.pause();
+      question.currentTime = 0;
+      if (!mutedRef.current) lobby.play().catch(() => {});
+    } else if (isPlaying) {
+      lobby.pause();
+      lobby.currentTime = 0;
+      if (!mutedRef.current) question.play().catch(() => {});
+    } else {
+      // finalizado ou outro estado
+      lobby.pause();
+      question.pause();
+    }
+  }, [isWaiting, isPlaying, isFinished]);
+
+  useEffect(() => {
+    if (isFinished) setShowPodium(true);
+  }, [isFinished]);
+
+  const handleToggleMute = () => {
+    const newMuted = !mutedRef.current;
+    mutedRef.current = newMuted;
+    setMuted(newMuted);
+    const lobby = lobbyAudioRef.current;
+    const question = questionAudioRef.current;
+    if (!lobby || !question) return;
+    if (newMuted) {
+      lobby.pause();
+      question.pause();
+    } else {
+      if (isWaiting) lobby.play().catch(() => {});
+      else if (isPlaying) question.play().catch(() => {});
+    }
+  };
 
   if (!authenticated) {
     return (
@@ -359,12 +416,27 @@ export default function Admin() {
             </button>
           </div>
 
-          {isFinished && winner && (
-            <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-primary" />
-              <span className="text-primary font-display font-bold">🏆 {winner.nickname} venceu!</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {/* Botão mute/unmute música */}
+            <button
+              onClick={handleToggleMute}
+              title={muted ? "Ativar música" : "Silenciar música"}
+              className={`p-2.5 rounded-xl border transition-all ${
+                muted
+                  ? "bg-card border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
+                  : "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+              }`}
+            >
+              {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+
+            {isFinished && winner && (
+              <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-primary" />
+                <span className="text-primary font-display font-bold">🏆 {winner.nickname} venceu!</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Category selection */}
