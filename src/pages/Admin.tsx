@@ -273,7 +273,11 @@ export default function Admin() {
     });
   };
 
-  const selectAllCategories = () => setSelectedCategories(new Set(categories));
+  const toggleAllCategories = () => {
+    setSelectedCategories((prev) =>
+      prev.size === categories.length ? new Set() : new Set(categories)
+    );
+  };
 
   // Quando a fase vira "rolando_dado" (início de nova rodada), guarda snapshot
   // das posições atuais. O tabuleiro usa esse snapshot durante perguntando/respondendo
@@ -295,6 +299,8 @@ export default function Admin() {
   const isPlaying = gameStatus === "em_andamento" || gameStatus === "playing";
   const isFinished = gameStatus === "finalizado" || gameStatus === "finished";
   const winner = players.find((p) => p.posicao >= 42);
+  const allCategoriesSelected =
+    categories.length > 0 && selectedCategories.size === categories.length;
 
   // Troca a música conforme o status do jogo
   useEffect(() => {
@@ -465,8 +471,8 @@ export default function Admin() {
           <div className="p-4 rounded-xl bg-card border border-border space-y-3">
             <div className="flex items-center justify-between">
               <p className="font-display font-bold text-foreground text-lg">📚 Categorias de Perguntas</p>
-              <button onClick={selectAllCategories} className="text-sm text-primary font-body hover:underline">
-                Selecionar todas
+              <button onClick={toggleAllCategories} className="text-sm text-primary font-body hover:underline">
+                {allCategoriesSelected ? "Desselecionar todas" : "Selecionar todas"}
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
