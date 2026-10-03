@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Gamepad2 } from "lucide-react";
+import { ForkRunLogo } from "@/components/ForkRunLogo";
 
 interface JoinFormProps {
   onJoin: (pin: string, nickname: string) => void;
@@ -23,12 +23,8 @@ export function JoinForm({ onJoin, error, loading }: JoinFormProps) {
       <div className="w-full max-w-sm space-y-8">
         {/* Logo */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 animate-float">
-            <Gamepad2 className="w-10 h-10 text-primary" />
-          </div>
-          <h1 className="text-4xl font-display font-bold text-primary text-glow">
-            QuizGame
-          </h1>
+          <h1 className="sr-only">Fork Run</h1>
+          <ForkRunLogo />
           <p className="text-muted-foreground font-body">
             Digite o PIN e entre na partida!
           </p>

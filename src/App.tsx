@@ -8,6 +8,7 @@ import JoinGame from "./pages/JoinGame.tsx";
 import Admin from "./pages/Admin.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Perguntas from "./pages/Perguntas.tsx";
+import { BrandHeader } from "@/components/BrandHeader";
 
 const queryClient = new QueryClient();
 
@@ -17,6 +18,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <BrandHeader />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/join" element={<JoinGame />} />
