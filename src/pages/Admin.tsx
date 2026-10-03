@@ -20,7 +20,7 @@ interface Game {
   status: string;
 }
 
-const ADMIN_PASSWORD = "teste123";
+const ADMIN_PASSWORD = "34971658";
 
 export default function Admin() {
   const navigate = useNavigate();

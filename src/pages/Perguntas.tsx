@@ -54,7 +54,7 @@ const EMPTY_NEW_ROW: NewRow = {
   alternativa_d: "", correta: "", categoria: "", dificuldade: "",
 };
 
-const ADMIN_PASSWORD = "teste123";
+const ADMIN_PASSWORD = "34971658";
 
 export default function Perguntas() {
   const navigate = useNavigate();
