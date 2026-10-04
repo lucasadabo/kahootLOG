@@ -9,6 +9,7 @@ import Admin from "./pages/Admin.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Perguntas from "./pages/Perguntas.tsx";
 import { BrandHeader } from "@/components/BrandHeader";
+import { WebAnalytics } from "@/components/WebAnalytics";
 
 const queryClient = new QueryClient();
 
@@ -18,6 +19,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <WebAnalytics />
         <BrandHeader />
         <Routes>
           <Route path="/" element={<Index />} />
