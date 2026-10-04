@@ -48,6 +48,10 @@ e verifica as quatro rotas, voltar no navegador, preenchimento de formulários
 sem enviar dados, URLs sensíveis bloqueadas e ausência de duplicação.
 
 O teste usa somente valores fictícios e não cria salas nem entra em partidas.
+O verificador local baixa o coletor oficial da Vercel e usa a dependência
+Playwright do projeto. No Windows, usa o Chrome instalado; outro executável
+pode ser informado por `ANALYTICS_BROWSER_PATH`. As evidências são salvas em
+`artifacts/`, que não entra no Git.
 Verificação local em 04/10/2026: seis testes passaram, build concluído, ESLint
 dos arquivos alterados sem erros. O teste no navegador verificou as quatro
 rotas, voltar no histórico, um script, sete visualizações sem duplicação,
@@ -56,3 +60,11 @@ origens e cabeçalho Referer sem dados sensíveis. Nenhum erro JavaScript.
 
 As consultas de confirmação usam a API oficial que alimenta o painel:
 https://vercel.com/docs/analytics/web-analytics-api
+
+Validação em produção em 04/10/2026: deployment
+`dpl_3XAyrgfQZ6UJjLjn6g9oKFqDiaqz`, status READY, no domínio oficial.
+As sete visualizações sintéticas receberam HTTP 200, sem erros JavaScript.
+A API passou de zero para um visitante e sete visualizações. O referrer
+adabo.com.br da primeira visualização é fictício, usado somente para verificar
+a remoção de parâmetros, e não comprova uma indicação real desse site.
+A confirmação foi pela API, sem conferência visual do painel autenticado.

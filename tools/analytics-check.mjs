@@ -1,11 +1,11 @@
-import { chromium } from 'file:///C:/Users/Lucas/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
 const live = process.argv.includes('--live');
 const origin = 'https://fr.adabo.com.br';
 const browser = await chromium.launch({
-  executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  executablePath: process.env.ANALYTICS_BROWSER_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined),
   headless: false, ignoreDefaultArgs: ['--enable-automation'],
   // Make this authorized synthetic visit eligible for the Analytics collector.
   args: ['--disable-blink-features=AutomationControlled', '--enable-unsafe-swiftshader'],
@@ -32,9 +32,12 @@ try {
     localStorage.setItem('__va_attribution', JSON.stringify({ userId: 'fixture-player', traits: { email: 'fixture@example.com' } }));
   });
   if (!live) {
+    const collectorResponse = await fetch('https://va.vercel-scripts.com/v1/script.js', { signal: AbortSignal.timeout(30000) });
+    assert.equal(collectorResponse.status, 200);
+    const collectorScript = await collectorResponse.text();
     await page.route(`${origin}/**`, async route => {
       const path = new URL(route.request().url()).pathname;
-      if (path === '/_vercel/insights/script.js') return route.fulfill({ contentType: 'text/javascript', body: await readFile('../vercel-analytics-script.js', 'utf8') });
+      if (path === '/_vercel/insights/script.js') return route.fulfill({ contentType: 'text/javascript', body: collectorScript });
       if (path.startsWith('/_vercel/insights/')) return route.fulfill({ status: 200, body: '{}' });
       const file = path.startsWith('/assets/') || path.startsWith('/brand/') || path === '/favicon.svg' ? `dist${path}` : 'dist/index.html';
       return route.fulfill({ body: await readFile(file), contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.html') ? 'text/html' : file.endsWith('.svg') ? 'image/svg+xml' : 'image/png' });
@@ -72,8 +75,9 @@ try {
   assert.equal(views[0].payload.r, 'https://adabo.com.br/');
   assert.deepEqual(errors, []);
   assert.ok(responses.every(response => response.status === 200));
-  await page.screenshot({ path: `../forkrun-analytics-${live ? 'production' : 'local'}.png` });
+  await mkdir('artifacts', { recursive: true });
+  await page.screenshot({ path: `artifacts/analytics-${live ? 'production' : 'local'}.png` });
   const result = { mode: live ? 'production' : 'local', views, responses, errors };
-  await writeFile(`../forkrun-analytics-${live ? 'production' : 'local'}.json`, JSON.stringify(result, null, 2));
+  await writeFile(`artifacts/analytics-${live ? 'production' : 'local'}.json`, JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally { await browser.close(); }
